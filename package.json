@@ -39,6 +39,7 @@
 	},
 	"dependencies": {
 		"await-notify": "1.0.1",
+		"node-cmd": "^3.0.0",
 		"vscode-debugadapter": "1.41.1"
 	},
 	"devDependencies": {
@@ -102,7 +103,7 @@
 		],
 		"breakpoints": [
 			{
-				"language": "markdown"
+				"language": "monkeyc"
 			}
 		],
 		"debuggers": [

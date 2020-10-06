@@ -4,6 +4,8 @@
 
 import { readFileSync } from 'fs';
 import { EventEmitter } from 'events';
+import { spawn } from 'child_process';
+import { TIMEOUT } from 'dns';
 
 export interface IMockBreakpoint {
 	id: number;
@@ -15,6 +17,7 @@ interface IStepInTargets {
 	id: number;
 	label: string;
 }
+
 
 interface IStackFrame {
 	index: number;
@@ -57,6 +60,9 @@ export class MockRuntime extends EventEmitter {
 	private _breakAddresses = new Set<string>();
 
 	private _noDebug = false;
+	
+	//child process which will send commands to the monkeyC debugger
+	private _messageSender;
 
 	constructor() {
 		super();
@@ -70,9 +76,45 @@ export class MockRuntime extends EventEmitter {
 		this._noDebug = noDebug;
 
 		this.loadSource(program);
+
+		//init messageSender in the background
+		this._messageSender = spawn('cmd', ['/K']);
+		this._messageSender.stdin.setEncoding = 'utf-8';
+		this._messageSender.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
+		this._messageSender.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
+
+		let path=program.replace(/source\\.*/,"bin");
+
+		//start the simulator
+		this._messageSender.stdin.write(Buffer.from('connectiq\n'));
+
+		//navigate to project dir
+		this._messageSender.stdin.write(Buffer.from('cd '+ path+'\n'));
+
+		//start the monkeyC command line debugger
+		this._messageSender.stdin.write(Buffer.from('mdd\n'));
+		
+		//load the program into the debugger
+		let projectName=path.split("\\")[5];
+		let programToBeLoadedCmmd="file "+projectName+".prg "+projectName+".prg.debug.xml "+"fenix6";
+		this._messageSender.stdin.write(Buffer.from(programToBeLoadedCmmd+'\n'));
+
+		this._messageSender.stdout.on('data', function (data) {
+			console.log('stdout: ' + data);
+		});
+		this._messageSender.stderr.on('data', function (err) {
+			console.log("error: " + err);
+
+		});
+		this._messageSender.on('exit', function (code) {
+			// console.log('child process exited with code ' + code);
+		});
+
+
 		this._currentLine = -1;
 
-		this.verifyBreakpoints(this._sourceFile);
+		setTimeout(()=>{
+			this.verifyBreakpoints(this._sourceFile,);
 
 		if (stopOnEntry) {
 			// we step once
@@ -81,6 +123,8 @@ export class MockRuntime extends EventEmitter {
 			// we just start to run until we hit a breakpoint or an exception
 			this.continue();
 		}
+		},10000);
+		
 	}
 
 	/**
@@ -88,6 +132,8 @@ export class MockRuntime extends EventEmitter {
 	 */
 	public continue(reverse = false) {
 		this.run(reverse, undefined);
+		console.log(this._messageSender);
+		
 	}
 
 	/**
@@ -277,7 +323,7 @@ export class MockRuntime extends EventEmitter {
 	 */
 	private run(reverse = false, stepEvent?: string) {
 		if (reverse) {
-			for (let ln = this._currentLine-1; ln >= 0; ln--) {
+			for (let ln = this._currentLine - 1; ln >= 0; ln--) {
 				if (this.fireEventsForLine(ln, stepEvent)) {
 					this._currentLine = ln;
 					this._currentColumn = undefined;
@@ -289,7 +335,7 @@ export class MockRuntime extends EventEmitter {
 			this._currentColumn = undefined;
 			this.sendEvent('stopOnEntry');
 		} else {
-			for (let ln = this._currentLine+1; ln < this._sourceLines.length; ln++) {
+			for (let ln = this._currentLine + 1; ln < this._sourceLines.length; ln++) {
 				if (this.fireEventsForLine(ln, stepEvent)) {
 					this._currentLine = ln;
 					this._currentColumn = undefined;
@@ -313,20 +359,15 @@ export class MockRuntime extends EventEmitter {
 			bps.forEach(bp => {
 				if (!bp.verified && bp.line < this._sourceLines.length) {
 					const srcLine = this._sourceLines[bp.line].trim();
-
-					// if a line is empty or starts with '+' we don't allow to set a breakpoint but move the breakpoint down
-					if (srcLine.length === 0 || srcLine.indexOf('+') === 0) {
-						bp.line++;
-					}
-					// if a line starts with '-' we don't allow to set a breakpoint but move the breakpoint up
-					if (srcLine.indexOf('-') === 0) {
-						bp.line--;
-					}
-					// don't set 'verified' to true if the line contains the word 'lazy'
+					
+					// don't set 'verified' to true if the line contains comment or contains only closing parenthesis or is empty
 					// in this case the breakpoint will be verified 'lazy' after hitting it once.
-					if (srcLine.indexOf('lazy') < 0) {
+					if (srcLine.indexOf("//") < 0 && srcLine!=='}' && srcLine.length!==0) {
 						bp.verified = true;
 						this.sendEvent('breakpointValidated', bp);
+
+						//send breakpoint position to debugger
+						this.sendBreakPointInfoToTheDebugger(bp.line,path);
 					}
 				}
 			});
@@ -372,15 +413,19 @@ export class MockRuntime extends EventEmitter {
 			const bps = breakpoints.filter(bp => bp.line === ln);
 			if (bps.length > 0) {
 
+				//skip breakpoint if not verified
+				if (!bps[0].verified) {
+					// bps[0].verified = true;
+					// this.sendEvent('breakpointValidated', bps[0]);
+					return false;
+				}
 				// send 'stopped' event
 				this.sendEvent('stopOnBreakpoint');
 
 				// the following shows the use of 'breakpoint' events to update properties of a breakpoint in the UI
 				// if breakpoint is not yet verified, verify it now and send a 'breakpoint' update event
-				if (!bps[0].verified) {
-					bps[0].verified = true;
-					this.sendEvent('breakpointValidated', bps[0]);
-				}
+
+
 				return true;
 			}
 		}
@@ -394,8 +439,13 @@ export class MockRuntime extends EventEmitter {
 		// nothing interesting found -> continue
 		return false;
 	}
-
-	private sendEvent(event: string, ... args: any[]) {
+	private sendBreakPointInfoToTheDebugger(ln:number,path:string):string{
+		let programFile=path.split("\\")[7];
+		let setBreakpointCommand='break '+programFile+':'+(ln+1).toString()+'\n';
+		this._messageSender.stdin.write(setBreakpointCommand);
+		return "";
+	}
+	private sendEvent(event: string, ...args: any[]) {
 		setImmediate(_ => {
 			this.emit(event, ...args);
 		});
