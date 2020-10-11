@@ -4,8 +4,8 @@
 
 import { readFileSync } from 'fs';
 import { EventEmitter } from 'events';
-import { spawn } from 'child_process';
-import { TIMEOUT } from 'dns';
+import { spawn} from 'child_process';
+
 
 export interface IMockBreakpoint {
 	id: number;
@@ -37,6 +37,7 @@ interface IStack {
  */
 export class MockRuntime extends EventEmitter {
 
+
 	// the initial (and one and only) file we are 'debugging'
 	private _sourceFile: string = '';
 	public get sourceFile() {
@@ -60,7 +61,7 @@ export class MockRuntime extends EventEmitter {
 	private _breakAddresses = new Set<string>();
 
 	private _noDebug = false;
-	
+
 	//child process which will send commands to the monkeyC debugger
 	private _messageSender;
 
@@ -77,44 +78,12 @@ export class MockRuntime extends EventEmitter {
 
 		this.loadSource(program);
 
-		//init messageSender in the background
-		this._messageSender = spawn('cmd', ['/K']);
-		this._messageSender.stdin.setEncoding = 'utf-8';
-		this._messageSender.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
-		this._messageSender.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
 
-		let path=program.replace(/source\\.*/,"bin");
-
-		//start the simulator
-		this._messageSender.stdin.write(Buffer.from('connectiq\n'));
-
-		//navigate to project dir
-		this._messageSender.stdin.write(Buffer.from('cd '+ path+'\n'));
-
-		//start the monkeyC command line debugger
-		this._messageSender.stdin.write(Buffer.from('mdd\n'));
 		
-		//load the program into the debugger
-		let projectName=path.split("\\")[5];
-		let programToBeLoadedCmmd="file "+projectName+".prg "+projectName+".prg.debug.xml "+"fenix6";
-		this._messageSender.stdin.write(Buffer.from(programToBeLoadedCmmd+'\n'));
-
-		this._messageSender.stdout.on('data', function (data) {
-			console.log('stdout: ' + data);
-		});
-		this._messageSender.stderr.on('data', function (err) {
-			console.log("error: " + err);
-
-		});
-		this._messageSender.on('exit', function (code) {
-			// console.log('child process exited with code ' + code);
-		});
-
-
 		this._currentLine = -1;
 
-		setTimeout(()=>{
-			this.verifyBreakpoints(this._sourceFile,);
+
+		this.verifyBreakpoints(this._sourceFile);
 
 		if (stopOnEntry) {
 			// we step once
@@ -123,8 +92,8 @@ export class MockRuntime extends EventEmitter {
 			// we just start to run until we hit a breakpoint or an exception
 			this.continue();
 		}
-		},10000);
-		
+
+
 	}
 
 	/**
@@ -132,8 +101,8 @@ export class MockRuntime extends EventEmitter {
 	 */
 	public continue(reverse = false) {
 		this.run(reverse, undefined);
-		console.log(this._messageSender);
-		
+		console.log(this._breakPoints);
+
 	}
 
 	/**
@@ -254,7 +223,7 @@ export class MockRuntime extends EventEmitter {
 	 */
 	public setBreakPoint(path: string, line: number): IMockBreakpoint {
 
-		const bp: IMockBreakpoint = { verified: false, line, id: this._breakpointId++ };
+		const bp: IMockBreakpoint = { verified: false, line, id: this._breakpointId++};
 		let bps = this._breakPoints.get(path);
 		if (!bps) {
 			bps = new Array<IMockBreakpoint>();
@@ -266,7 +235,32 @@ export class MockRuntime extends EventEmitter {
 
 		return bp;
 	}
+	public checkIfBreakPointDeleted(breakpoints: number[] | undefined, path: string) {
+		const bps = this._breakPoints.get(path);
+		if (bps) {
+			if (breakpoints) {
+				if (bps.length > breakpoints.length) {
+					bps.forEach((bp) => {
+						let bpFind = breakpoints.find(line => line === bp.line);
+						if (!bpFind) {
+							//this.clearBreakPointDebugger(bp.line, path);
+						}
+					});
+				}
+			}
+		}
 
+		
+
+
+
+
+
+
+		//breakpoints?.forEach((num)=>console.log(num));
+
+
+	}
 	/*
 	 * Clear breakpoint in file with given line.
 	 */
@@ -287,7 +281,10 @@ export class MockRuntime extends EventEmitter {
 	 * Clear all breakpoints for file.
 	 */
 	public clearBreakpoints(path: string): void {
+		this.clearBreakPointsDebugger(path);
 		this._breakPoints.delete(path);
+		
+		
 	}
 
 	/*
@@ -359,15 +356,15 @@ export class MockRuntime extends EventEmitter {
 			bps.forEach(bp => {
 				if (!bp.verified && bp.line < this._sourceLines.length) {
 					const srcLine = this._sourceLines[bp.line].trim();
-					
+
 					// don't set 'verified' to true if the line contains comment or contains only closing parenthesis or is empty
 					// in this case the breakpoint will be verified 'lazy' after hitting it once.
-					if (srcLine.indexOf("//") < 0 && srcLine!=='}' && srcLine.length!==0) {
+					if (srcLine.indexOf("//") < 0 && srcLine !== '}' && srcLine.length !== 0) {
 						bp.verified = true;
 						this.sendEvent('breakpointValidated', bp);
 
 						//send breakpoint position to debugger
-						this.sendBreakPointInfoToTheDebugger(bp.line,path);
+						this.addBreakPointDebugger(bp.line, path);
 					}
 				}
 			});
@@ -422,10 +419,6 @@ export class MockRuntime extends EventEmitter {
 				// send 'stopped' event
 				this.sendEvent('stopOnBreakpoint');
 
-				// the following shows the use of 'breakpoint' events to update properties of a breakpoint in the UI
-				// if breakpoint is not yet verified, verify it now and send a 'breakpoint' update event
-
-
 				return true;
 			}
 		}
@@ -439,11 +432,78 @@ export class MockRuntime extends EventEmitter {
 		// nothing interesting found -> continue
 		return false;
 	}
-	private sendBreakPointInfoToTheDebugger(ln:number,path:string):string{
-		let programFile=path.split("\\")[7];
-		let setBreakpointCommand='break '+programFile+':'+(ln+1).toString()+'\n';
+	private clearBreakPointsDebugger(path: string) {
+		const bpsToBeCleared=this._breakPoints.get(path);
+		if (bpsToBeCleared){
+			
+			const last=bpsToBeCleared[bpsToBeCleared?.length-1];
+			if (bpsToBeCleared.length===1){
+				const clearBreakpointsCommand = 'delete ' +last.id  + '\n';
+				this._messageSender.stdin.write(clearBreakpointsCommand);
+			}
+			else{
+				const clearBreakpointsCommand = 'delete ' +bpsToBeCleared[0].id+ '-' +last.id  + '\n';
+				this._messageSender.stdin.write(clearBreakpointsCommand);
+			}
+			
+		}
+		
+		// this._messageSender.stdin.write(clearBreakpointCommand);
+		
+	}
+	private addBreakPointDebugger(ln: number, path: string): string {
+		let programFile = path.split("\\")[7];
+		let setBreakpointCommand = 'break ' + programFile + ':' + (ln + 1).toString() + '\n';
 		this._messageSender.stdin.write(setBreakpointCommand);
 		return "";
+	}
+
+	public loadTheDebugger(program: string): void {
+		//init messageSender in the background
+		this._messageSender = spawn('cmd', ['/K']);
+		this._messageSender.stdin.setEncoding = 'utf-8';
+		this._messageSender.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
+		this._messageSender.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
+
+		let path = program.replace(/source\\.*/, "bin");
+
+		//start the simulator
+		this._messageSender.stdin.write(Buffer.from('connectiq\n'));
+
+		//navigate to project dir
+		this._messageSender.stdin.write(Buffer.from('cd ' + path + '\n'));
+
+		//start the monkeyC command line debugger
+		const pr = this._messageSender.stdin.write(Buffer.from('mdd\n'));
+
+		//load the program into the debugger
+		let projectName = path.split("\\")[5];
+		let programToBeLoadedCmmd = "file " + projectName + ".prg " + projectName + ".prg.debug.xml " + "d2deltas";
+		this._messageSender.stdin.write(Buffer.from(programToBeLoadedCmmd + '\n'));
+
+		this._messageSender.stdout.on('data',(data)=> {
+			// if (data.indexOf("Breakpoint")===0){
+			// 	const breakpointInfo=data.split(" ");
+			// 	const file=breakpointInfo[3];
+			// 	const arr=Array.from(this._breakPoints.keys());
+			// 	this._breakPoints.forEach((key)=>{
+			// 		console.log(key);
+					
+			// 	});
+				
+				
+				
+			
+			console.log('stdout: ' + data);
+		});
+		this._messageSender.stderr.on('data', (err)=> {
+			console.log("error: " + err);
+
+		});
+		this._messageSender.on('exit',  (code)=> {
+			// console.log('child process exited with code ' + code);
+		});
+
 	}
 	private sendEvent(event: string, ...args: any[]) {
 		setImmediate(_ => {

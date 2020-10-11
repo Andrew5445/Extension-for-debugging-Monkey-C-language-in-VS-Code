@@ -47,6 +47,8 @@ export class MockDebugSession extends LoggingDebugSession {
 
 	private _configurationDone = new Subject();
 
+	private _launchDone = new Subject();
+
 	private _cancelationTokens = new Map<number, boolean>();
 	private _isLongrunning = new Map<number, boolean>();
 
@@ -103,6 +105,7 @@ export class MockDebugSession extends LoggingDebugSession {
 		this._runtime.on('end', () => {
 			this.sendEvent(new TerminatedEvent());
 		});
+		//this._runtime.loadTheDebugger();
 	}
 
 	/**
@@ -143,6 +146,7 @@ export class MockDebugSession extends LoggingDebugSession {
 		// make VS Code provide "Step in Target" functionality
 		response.body.supportsStepInTargetsRequest = true;
 
+		//this._runtime.loadTheDebugger('c:\\Users\\ondre\\Desktop\\debuggerExtensionStart\\WATCHFACE\\source\\WATCHFACEApp.mc');
 		this.sendResponse(response);
 
 		// since this debug adapter can accept configuration requests like 'setBreakpoint' at any time,
@@ -168,18 +172,28 @@ export class MockDebugSession extends LoggingDebugSession {
 		logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
 
 		// wait until configuration has finished (and configurationDoneRequest has been called)
+		//await
 		await this._configurationDone.wait(1000);
 
 		// start the program in the runtime
+		//const load= await this._runtime.loadTheDebugger(args.program);
+		await this._runtime.loadTheDebugger(args.program);
 		this._runtime.start(args.program, !!args.stopOnEntry, !!args.noDebug);
-
+		this._launchDone.notify();
 		this.sendResponse(response);
 	}
 
-	protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments): void {
+	protected async setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments) {
 
+		//wait for launch before setting the breakpoints
+		await this._launchDone.wait(1000);
 		const path = args.source.path as string;
 		const clientLines = args.lines || [];
+
+
+		//check if breakpoint got deleted
+		//let convertedClientLines=clientLines.map((line)=>line=this.convertClientColumnToDebugger(line));
+		//this._runtime.checkIfBreakPointDeleted(convertedClientLines,path);
 
 		// clear all breakpoints for this file
 		this._runtime.clearBreakpoints(path);
