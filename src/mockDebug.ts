@@ -7,11 +7,11 @@ import {
 	LoggingDebugSession,
 	InitializedEvent, TerminatedEvent, StoppedEvent, BreakpointEvent, OutputEvent,
 	ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent,
-	Thread, StackFrame, Scope, Source, Handles, Breakpoint
+	Thread, StackFrame, Scope, Source, Handles, Breakpoint, Variable
 } from 'vscode-debugadapter';
 import { DebugProtocol } from 'vscode-debugprotocol';
 import { basename } from 'path';
-import { MockRuntime, IMockBreakpoint } from './mockRuntime';
+import { MockRuntime, IMockBreakpoint,IMockVariable } from './mockRuntime';
 import { Subject } from 'await-notify';
 
 function timeout(ms: number) {
@@ -190,11 +190,6 @@ export class MockDebugSession extends LoggingDebugSession {
 		const path = args.source.path as string;
 		const clientLines = args.lines || [];
 
-
-		//check if breakpoint got deleted
-		//let convertedClientLines=clientLines.map((line)=>line=this.convertClientColumnToDebugger(line));
-		//this._runtime.checkIfBreakPointDeleted(convertedClientLines,path);
-
 		// clear all breakpoints for this file
 		this._runtime.clearBreakpoints(path);
 
@@ -277,76 +272,81 @@ export class MockDebugSession extends LoggingDebugSession {
 	}
 
 	protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request) {
-
+		await this._launchDone.wait(1000);
 		const variables: DebugProtocol.Variable[] = [];
+		const actualVariables:IMockVariable[]=await this._runtime.getVariablesInfoFromDebugger();
+		actualVariables.forEach((variable)=>{
+		//console.log(variable.name);
+		variables.push({name:variable.name,value:variable.value,variablesReference:0});
+		
+		});
+		// if (this._isLongrunning.get(args.variablesReference)) {
+		// 	// long running
 
-		if (this._isLongrunning.get(args.variablesReference)) {
-			// long running
+		// 	if (request) {
+		// 		this._cancelationTokens.set(request.seq, false);
+		// 	}
 
-			if (request) {
-				this._cancelationTokens.set(request.seq, false);
-			}
+		// 	for (let i = 0; i < 100; i++) {
+		// 		await timeout(1000);
+		// 		variables.push({
+		// 			name: `i_${i}`,
+		// 			type: "integer",
+		// 			value: `${i}`,
+		// 			variablesReference: 0
+		// 		});
+		// 		if (request && this._cancelationTokens.get(request.seq)) {
+		// 			break;
+		// 		}
+		// 	}
 
-			for (let i = 0; i < 100; i++) {
-				await timeout(1000);
-				variables.push({
-					name: `i_${i}`,
-					type: "integer",
-					value: `${i}`,
-					variablesReference: 0
-				});
-				if (request && this._cancelationTokens.get(request.seq)) {
-					break;
-				}
-			}
+		// 	if (request) {
+		// 		this._cancelationTokens.delete(request.seq);
+		// 	}
 
-			if (request) {
-				this._cancelationTokens.delete(request.seq);
-			}
+		// } else {
 
-		} else {
+		// 	const id = this._variableHandles.get(args.variablesReference);
 
-			const id = this._variableHandles.get(args.variablesReference);
+		// 	if (id) {
+		// 		variables.push({
+		// 			name: id + "_i",
+		// 			type: "integer",
+		// 			value: "123",
+		// 			__vscodeVariableMenuContext: "simple",
+		// 			variablesReference: 0
+		// 		} as DebugProtocol.Variable);
+		// 		variables.push({
+		// 			name: id + "_f",
+		// 			type: "float",
+		// 			value: "3.14",
+		// 			variablesReference: 0
+		// 		});
+		// 		variables.push({
+		// 			name: id + "_s",
+		// 			type: "string",
+		// 			value: "hello world",
+		// 			variablesReference: 0
+		// 		});
+		// 		variables.push({
+		// 			name: id + "_o",
+		// 			type: "object",
+		// 			value: "Object",
+		// 			variablesReference: this._variableHandles.create(id + "_o")
+		// 		});
 
-			if (id) {
-				variables.push({
-					name: id + "_i",
-					type: "integer",
-					value: "123",
-					__vscodeVariableMenuContext: "simple",
-					variablesReference: 0
-				} as DebugProtocol.Variable);
-				variables.push({
-					name: id + "_f",
-					type: "float",
-					value: "3.14",
-					variablesReference: 0
-				});
-				variables.push({
-					name: id + "_s",
-					type: "string",
-					value: "hello world",
-					variablesReference: 0
-				});
-				variables.push({
-					name: id + "_o",
-					type: "object",
-					value: "Object",
-					variablesReference: this._variableHandles.create(id + "_o")
-				});
-
-				// cancellation support for long running requests
-				const nm = id + "_long_running";
-				const ref = this._variableHandles.create(id + "_lr");
-				variables.push({
-					name: nm,
-					type: "object",
-					value: "Object",
-					variablesReference: ref
-				});
-				this._isLongrunning.set(ref, true);
-			}
-		}
+		// 		// cancellation support for long running requests
+		// 		const nm = id + "_long_running";
+		// 		const ref = this._variableHandles.create(id + "_lr");
+		// 		variables.push({
+		// 			name: nm,
+		// 			type: "object",
+		// 			value: "Object",
+		// 			variablesReference: ref
+		// 		});
+		// 		this._isLongrunning.set(ref, true);
+		// 	}
+		// }
 
 		response.body = {
 			variables: variables
@@ -354,8 +354,8 @@ export class MockDebugSession extends LoggingDebugSession {
 		this.sendResponse(response);
 	}
 
-	protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
-		this._runtime.continue();
+	protected async continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): Promise<void> {
+		await this._runtime.continue();
 		this.sendResponse(response);
 	}
 

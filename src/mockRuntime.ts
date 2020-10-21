@@ -4,8 +4,8 @@
 
 import { readFileSync } from 'fs';
 import { EventEmitter } from 'events';
-import { spawn} from 'child_process';
-
+import { spawn } from 'child_process';
+import { DebuggerMiddleware } from './debuggerMiddleware';
 
 export interface IMockBreakpoint {
 	id: number;
@@ -17,7 +17,10 @@ interface IStepInTargets {
 	id: number;
 	label: string;
 }
-
+export interface IMockVariable {
+	name: string;
+	value: string;
+}
 
 interface IStackFrame {
 	index: number;
@@ -43,7 +46,7 @@ export class MockRuntime extends EventEmitter {
 	public get sourceFile() {
 		return this._sourceFile;
 	}
-
+	private buffer;
 	// the contents (= lines) of the one and only file
 	private _sourceLines: string[] = [];
 
@@ -60,8 +63,9 @@ export class MockRuntime extends EventEmitter {
 
 	private _breakAddresses = new Set<string>();
 
+	private debuggerMiddleware = new DebuggerMiddleware();
 	private _noDebug = false;
-
+	private isStarted=false;
 	//child process which will send commands to the monkeyC debugger
 	private _messageSender;
 
@@ -79,7 +83,7 @@ export class MockRuntime extends EventEmitter {
 		this.loadSource(program);
 
 
-		
+
 		this._currentLine = -1;
 
 
@@ -99,9 +103,29 @@ export class MockRuntime extends EventEmitter {
 	/**
 	 * Continue execution to the end/beginning.
 	 */
-	public continue(reverse = false) {
-		this.run(reverse, undefined);
-		console.log(this._breakPoints);
+	public async continue(reverse = false) {
+		if (!this.isStarted){
+		this._messageSender.stdin.write(Buffer.from('r\n'));
+		this.isStarted=true;
+		}
+		else{
+		this._messageSender.stdin.write(Buffer.from('continue\n'));
+		}
+		let output: string = await new Promise((resolve) => {
+			this.debuggerMiddleware.waitForData(resolve,"runInfo");
+
+
+		});
+		console.log(output);
+		const info=output.match(/Hit breakpoint ([0-9]+)(?:.|\n|\r)*.mc:([0-9]+)/);
+		if (info){
+			const breakpointStop:IMockBreakpoint={id:Number(info[1]),line:Number(info[2])-1,verified:true};
+			this.run(reverse,breakpointStop,undefined);
+		}
+		
+		
+		//run program in debugger
+		
 
 	}
 
@@ -109,7 +133,7 @@ export class MockRuntime extends EventEmitter {
 	 * Step to the next/previous non empty line.
 	 */
 	public step(reverse = false, event = 'stopOnStep') {
-		this.run(reverse, event);
+		this.run(reverse,null, event);
 	}
 
 	/**
@@ -170,6 +194,36 @@ export class MockRuntime extends EventEmitter {
 		});
 	}
 
+	public async getVariablesInfoFromDebugger(): Promise<IMockVariable[]> {
+		this._messageSender.stdin.write(Buffer.from('info frame\n'));
+		const output: string = await new Promise((resolve) => {
+			this.debuggerMiddleware.waitForData(resolve,"variablesInfo");
+
+
+		});
+
+		
+		if (!output.includes("No app is suspended.") && !output.includes("No locals.") ) {
+			//output.replace(/(.|\n)*Locals:/, "");
+			const variables: IMockVariable[] = [];
+			let parsedOutput = output.replace(/\r/g, "").replace(/(.|\n)*Locals:/, "").replace("(mdd) ","").split("\n");
+			parsedOutput.forEach((line) => {
+				if (line!==""){
+				const variableInfo = line.trim().split(" = ");
+				variables.push({ name: variableInfo[0], value: variableInfo[1] });
+			}
+			});
+			return variables;
+
+
+
+
+		}
+
+		return [];
+
+	}
+
 	/**
 	 * Returns a fake 'stacktrace' where every 'stackframe' is a word from the current line.
 	 */
@@ -223,7 +277,7 @@ export class MockRuntime extends EventEmitter {
 	 */
 	public setBreakPoint(path: string, line: number): IMockBreakpoint {
 
-		const bp: IMockBreakpoint = { verified: false, line, id: this._breakpointId++};
+		const bp: IMockBreakpoint = { verified: false, line, id: this._breakpointId++ };
 		let bps = this._breakPoints.get(path);
 		if (!bps) {
 			bps = new Array<IMockBreakpoint>();
@@ -249,13 +303,6 @@ export class MockRuntime extends EventEmitter {
 				}
 			}
 		}
-
-		
-
-
-
-
-
 
 		//breakpoints?.forEach((num)=>console.log(num));
 
@@ -283,8 +330,8 @@ export class MockRuntime extends EventEmitter {
 	public clearBreakpoints(path: string): void {
 		this.clearBreakPointsDebugger(path);
 		this._breakPoints.delete(path);
-		
-		
+
+
 	}
 
 	/*
@@ -318,10 +365,10 @@ export class MockRuntime extends EventEmitter {
 	 * Run through the file.
 	 * If stepEvent is specified only run a single step and emit the stepEvent.
 	 */
-	private run(reverse = false, stepEvent?: string) {
+	private run(reverse = false,breakpointStop, stepEvent?: string,) {
 		if (reverse) {
 			for (let ln = this._currentLine - 1; ln >= 0; ln--) {
-				if (this.fireEventsForLine(ln, stepEvent)) {
+				if (this.fireEventsForLine(ln,breakpointStop, stepEvent)) {
 					this._currentLine = ln;
 					this._currentColumn = undefined;
 					return;
@@ -333,7 +380,7 @@ export class MockRuntime extends EventEmitter {
 			this.sendEvent('stopOnEntry');
 		} else {
 			for (let ln = this._currentLine + 1; ln < this._sourceLines.length; ln++) {
-				if (this.fireEventsForLine(ln, stepEvent)) {
+				if (this.fireEventsForLine(ln,breakpointStop,stepEvent)) {
 					this._currentLine = ln;
 					this._currentColumn = undefined;
 					return true;
@@ -375,7 +422,7 @@ export class MockRuntime extends EventEmitter {
 	 * Fire events if line has a breakpoint or the word 'exception' is found.
 	 * Returns true is execution needs to stop.
 	 */
-	private fireEventsForLine(ln: number, stepEvent?: string): boolean {
+	private fireEventsForLine(ln: number,breakpointStop:IMockBreakpoint, stepEvent?: string): boolean {
 
 		if (this._noDebug) {
 			return false;
@@ -417,9 +464,13 @@ export class MockRuntime extends EventEmitter {
 					return false;
 				}
 				// send 'stopped' event
-				this.sendEvent('stopOnBreakpoint');
+				if (breakpointStop.id===bps[0].id && breakpointStop.line===bps[0].line){
+					this.sendEvent('stopOnBreakpoint');
+					return true;
+				}
+				
 
-				return true;
+				
 			}
 		}
 
@@ -433,23 +484,23 @@ export class MockRuntime extends EventEmitter {
 		return false;
 	}
 	private clearBreakPointsDebugger(path: string) {
-		const bpsToBeCleared=this._breakPoints.get(path);
-		if (bpsToBeCleared){
-			
-			const last=bpsToBeCleared[bpsToBeCleared?.length-1];
-			if (bpsToBeCleared.length===1){
-				const clearBreakpointsCommand = 'delete ' +last.id  + '\n';
+		const bpsToBeCleared = this._breakPoints.get(path);
+		if (bpsToBeCleared) {
+
+			const last = bpsToBeCleared[bpsToBeCleared?.length - 1];
+			if (bpsToBeCleared.length === 1) {
+				const clearBreakpointsCommand = 'delete ' + last.id + '\n';
 				this._messageSender.stdin.write(clearBreakpointsCommand);
 			}
-			else{
-				const clearBreakpointsCommand = 'delete ' +bpsToBeCleared[0].id+ '-' +last.id  + '\n';
+			else {
+				const clearBreakpointsCommand = 'delete ' + bpsToBeCleared[0].id + '-' + last.id + '\n';
 				this._messageSender.stdin.write(clearBreakpointsCommand);
 			}
-			
+
 		}
-		
+
 		// this._messageSender.stdin.write(clearBreakpointCommand);
-		
+
 	}
 	private addBreakPointDebugger(ln: number, path: string): string {
 		let programFile = path.split("\\")[7];
@@ -460,8 +511,9 @@ export class MockRuntime extends EventEmitter {
 
 	public loadTheDebugger(program: string): void {
 		//init messageSender in the background
-		this._messageSender = spawn('cmd', ['/K']);
+		this._messageSender = spawn('cmd', ['/K'], { shell: true });
 		this._messageSender.stdin.setEncoding = 'utf-8';
+		this._messageSender.stdout.setEncoding = 'utf-8';
 		this._messageSender.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
 		this._messageSender.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
 
@@ -481,26 +533,55 @@ export class MockRuntime extends EventEmitter {
 		let programToBeLoadedCmmd = "file " + projectName + ".prg " + projectName + ".prg.debug.xml " + "d2deltas";
 		this._messageSender.stdin.write(Buffer.from(programToBeLoadedCmmd + '\n'));
 
-		this._messageSender.stdout.on('data',(data)=> {
-			// if (data.indexOf("Breakpoint")===0){
-			// 	const breakpointInfo=data.split(" ");
-			// 	const file=breakpointInfo[3];
-			// 	const arr=Array.from(this._breakPoints.keys());
-			// 	this._breakPoints.forEach((key)=>{
-			// 		console.log(key);
+		this._messageSender.stdout.on('data',async (data) => {
+			//console.log('Debugger info: ' + data+"$$$");
+			this.buffer+=data;
+			if (this.buffer.includes("mdd\n")){
+
+				this.buffer=this.buffer.replace(/(.|\n|\r)*mdd\n/, "");
+				//console.log(this.buffer);
+			}
+			else{
+				let outputLines:string[]=this.buffer.split("(mdd) ");
+				outputLines=outputLines.filter((el)=>{return el.length!==0;});
+				if (outputLines.length>0){
+					let lastIndex;
+					//var re = new RegExp(/(.|\n|\r)*(mdd)/);
+					if (/(.|\n|\r)*(mdd)/.test(this.buffer)){
+						lastIndex=outputLines.length-1;
+					}
+					else{
+						if (outputLines.length!==1){
+							lastIndex=outputLines.length-2;
+						}
+						else{
+							return;
+						}
+					}
+					for (let index = 0; index <= lastIndex; index++) {
+						console.log(outputLines[index]+"\n");	
+						this.debuggerMiddleware.onData(outputLines[index].trim());
+						this.buffer=this.buffer.replace(outputLines[index]+"(mdd) ","");
+					}
 					
-			// 	});
+				}
 				
 				
 				
-			
-			console.log('stdout: ' + data);
+				
+				
+
+
+			}
+
+			//this.debuggerMiddleware.onData(data);
 		});
-		this._messageSender.stderr.on('data', (err)=> {
+		this._messageSender.stderr.on('data', (err) => {
 			console.log("error: " + err);
 
+
 		});
-		this._messageSender.on('exit',  (code)=> {
+		this._messageSender.on('exit', (code) => {
 			// console.log('child process exited with code ' + code);
 		});
 
