@@ -69,12 +69,12 @@
 			"editor/title": [
 				{
 					"command": "extension.mock-debug.runEditorContents",
-					"when": "resourceLangId == markdown",
+					"when": "resourceLangId == monkeyc",
 					"group": "1_run@10"
 				},
 				{
 					"command": "extension.mock-debug.debugEditorContents",
-					"when": "resourceLangId == markdown",
+					"when": "resourceLangId == monkeyc",
 					"group": "1_run@20"
 				}
 			],
