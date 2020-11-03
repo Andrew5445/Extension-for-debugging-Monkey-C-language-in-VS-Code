@@ -21,6 +21,8 @@ interface IStepInTargets {
 export interface IMockVariable {
 	name: string;
 	value: string;
+	type: string;
+	variablesReference: number;
 }
 
 interface IStackFrame {
@@ -47,7 +49,7 @@ export class MockRuntime extends EventEmitter {
 	public get sourceFiles() {
 		return this._sourceFiles;
 	}
-	private buffer;
+	private _currentFile;
 	// the contents (= lines) of the one and only file
 	private _sourceLines: string[] = [];
 
@@ -55,11 +57,9 @@ export class MockRuntime extends EventEmitter {
 	private _currentLine = 0;
 	private _currentColumn: number | undefined;
 
-
-	private _currentFile;
 	// maps from sourceFile to array of Mock breakpoints
 	private _breakPoints = new Map<string, IMockBreakpoint[]>();
-
+	private buffer;
 	// since we want to send breakpoint events, we will assign an id to every event
 	// so that the frontend can match events with breakpoints.
 	private _breakpointId = 1;
@@ -89,7 +89,7 @@ export class MockRuntime extends EventEmitter {
 
 
 		this._currentLine = -1;
-		
+
 		//this.verifyBreakpoints(this._sourceFile);
 
 		if (stopOnEntry) {
@@ -122,8 +122,12 @@ export class MockRuntime extends EventEmitter {
 		console.log(output);
 		const info = output.match(/Hit breakpoint ([0-9]+)(?:.|\n|\r)*at (.*):([0-9]+)/);
 		if (info) {
+			this._currentFile = this.getFileFullPath(info[2]);
+		}
+
+		if (info) {
 			const breakpointStop: IMockBreakpoint = { id: Number(info[1]), line: Number(info[3]) - 1, verified: true };
-			this.run(reverse, breakpointStop,info[2], undefined);
+			this.run(reverse, breakpointStop, undefined);
 		}
 
 
@@ -136,7 +140,7 @@ export class MockRuntime extends EventEmitter {
 	 * Step to the next/previous non empty line.
 	 */
 	public step(reverse = false, event = 'stopOnStep') {
-		this.run(reverse, null,'', event);
+		this.run(reverse, null, event);
 	}
 
 	/**
@@ -197,7 +201,7 @@ export class MockRuntime extends EventEmitter {
 		});
 	}
 
-	public async getVariablesInfoFromDebugger(): Promise<IMockVariable[]> {
+	public async getVariablesInfoFromDebugger(variableHandles): Promise<IMockVariable[]> {
 		this._messageSender.stdin.write(Buffer.from('info frame\n'));
 		const output: string = await new Promise((resolve) => {
 			this.debuggerMiddleware.waitForData(resolve, "variablesInfo");
@@ -206,17 +210,35 @@ export class MockRuntime extends EventEmitter {
 		});
 
 
-		if (!output.includes("No app is suspended.") && !output.includes("No locals.")) {
+		if (!output.includes("Locals:") || !output.includes("No app is suspended.") || !output.includes('No locals.')) {
 			//output.replace(/(.|\n)*Locals:/, "");
 			const variables: IMockVariable[] = [];
-			let parsedOutput = output.replace(/\r/g, "").replace(/(.|\n)*Locals:/, "").replace("(mdd) ", "").split("\n");
-			parsedOutput.forEach((line) => {
-				if (line !== "") {
-					const variableInfo = line.trim().split(" = ");
-					variables.push({ name: variableInfo[0], value: variableInfo[1] });
-				}
-			});
-			return variables;
+
+			const parsedOutput = output.match(/Locals:(.*)/s);
+			if (parsedOutput) {
+				const lines = parsedOutput[1].split('\r\n');
+				lines.forEach((line) => {
+					if (line !== "") {
+
+						const variableInfo = line.trim().match(/(.*) = (.*)/);
+						if (variableInfo) {
+							if (variableInfo[2] === 'null') {
+								variables.push({ name: variableInfo[1], value: variableInfo[2], type: 'undefined', variablesReference: 0 });
+							}
+							else {
+								if (!variableInfo[2].split(' ')[1].includes('Object')) {
+									variables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g,''), variablesReference: 0 });
+								}
+								else {
+									variables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g,''), variablesReference: variableHandles.create(variableInfo[1]) });
+								}
+							}
+						}
+					}
+				});
+				return variables;
+			}
+
 
 
 
@@ -227,32 +249,120 @@ export class MockRuntime extends EventEmitter {
 
 	}
 
+
+	public async getChildVariablesInfoFromDebugger(variableHandles, variableName): Promise<IMockVariable[]> {
+		this._messageSender.stdin.write(Buffer.from('print ' + variableName + ' \n'));
+		const output: string = await new Promise((resolve) => {
+			this.debuggerMiddleware.waitForData(resolve, 'childVariablesInfo_' + variableName);
+
+
+		});
+		//console.log(output);
+
+
+		//handle symbol not found error
+		if (/No symbol ".*" in current context./.test(output)) {
+			return [];
+		}
+
+		const variables: IMockVariable[] = [];
+		const lines = output.split(',');
+		lines[0] = lines[0].replace(/.*\r/, '');
+		for (let index = 1; index < lines.length; index++) {
+			
+			//ignore empty line
+			if (lines[index] !== "") {
+
+				const isStringVarInObject = lines[index].trim().split('\n').length > 1;
+
+				//handle string variable in object
+				if (isStringVarInObject) {
+					let varInfo = lines[index].trim().split(' ');
+					varInfo=varInfo.filter(x=>x!=='');
+					console.log();
+					variables.push({ name: varInfo[0], value: varInfo[7], type: varInfo[3].trim().replace(/[/)]|[/(]/g,''), variablesReference: 0 });
+				}
+				else {
+					const variableInfo = lines[index].trim().split(' ');
+					
+					if (variableInfo) {
+						if (variableInfo[2] === 'null') {
+							variables.push({ name: variableInfo[0], value: variableInfo[2], type: 'undefined', variablesReference: 0 });
+						}
+						else {
+							if (!variableInfo[3].includes('Object')) {
+								variables.push({ name: variableInfo[0], value: variableInfo[2], type: variableInfo[3].replace(/[/)]|[/(]/g,''), variablesReference: 0 });
+							}
+							else {
+								variables.push({ name: variableInfo[0], value: variableInfo[2], type: variableInfo[3].replace(/[/)]|[/(]/g,''), variablesReference: variableHandles.create(variableInfo[1]) });
+							}
+						}
+					}
+				}
+			}
+		}
+		return variables;
+
+
+
+
+
+
+
+
+
+
+	}
+
 	/**
 	 * Returns a fake 'stacktrace' where every 'stackframe' is a word from the current line.
 	 */
-	public stack(startFrame: number, endFrame: number): IStack {
-		const lines=this._sourceFiles.get(this._currentFile);
-		if (lines){
-			const words = lines[this._currentLine].trim().split(/\s+/);
+	public async stack(startFrame: number, endFrame: number): Promise<IStack> {
+		this._messageSender.stdin.write('info frame \n');
+		let frameInfo: string = await new Promise((resolve) => {
+			this.debuggerMiddleware.waitForData(resolve, "frameInfo");
+
+
+		});
+
+		const info = frameInfo.match(/Stack level ([0-9]+)(?:.|\n|\r)*in (.*) at (.*):([0-9]+)/);
+		if (info) {
 			const frames = new Array<IStackFrame>();
-		//every word of the current line becomes a stack frame.
-		for (let i = startFrame; i < Math.min(endFrame, words.length); i++) {
-			const name = words[i];	// use a word of the line as the stackframe name
 			const stackFrame: IStackFrame = {
-				index: i,
-				name: `${name}(${i})`,
-				file: this._currentFile,
-				line: this._currentLine
+				index: Number(info[1]),
+				name: info[2],
+				file: this.getFileFullPath(info[3]),
+				line: Number(info[4])
 			};
-			if (typeof this._currentColumn === 'number') {
-				stackFrame.column = this._currentColumn;
-			}
 			frames.push(stackFrame);
+			return {
+				frames: frames,
+				count: 1
+			};
 		}
-		return {
-			frames: frames,
-			count: words.length
-		};
+
+		// const lines = this._sourceFiles.get(this._currentFile);
+		// if (lines) {
+		// 	const words = lines[this._currentLine].trim().split(/\s+/);
+		// 	const frames = new Array<IStackFrame>();
+		// 	//every word of the current line becomes a stack frame.
+		// 	for (let i = startFrame; i < Math.min(endFrame, words.length); i++) {
+		// 		const name = words[i];	// use a word of the line as the stackframe name
+		// 		const stackFrame: IStackFrame = {
+		// 			index: i,
+		// 			name: `${name}(${i})`,
+		// 			file: this._currentFile,
+		// 			line: this._currentLine
+		// 		};
+		// 		if (typeof this._currentColumn === 'number') {
+		// 			stackFrame.column = this._currentColumn;
+		// 		}
+		// 		frames.push(stackFrame);
+		// 	}
+		// return {
+		// 	frames: frames,
+		// 	count: words.length
+		// };
 
 
 
@@ -260,8 +370,8 @@ export class MockRuntime extends EventEmitter {
 
 
 
-		}
-		else{
+		//}
+		else {
 			return {
 				frames: [],
 				count: 0
@@ -269,7 +379,7 @@ export class MockRuntime extends EventEmitter {
 		}
 		//this._sourceLines[this._currentLine].trim().split(/\s+/);
 
-		
+
 	}
 
 	public getBreakpoints(path: string, line: number): number[] {
@@ -298,7 +408,7 @@ export class MockRuntime extends EventEmitter {
 	public setBreakPoint(path: string, line: number): IMockBreakpoint {
 		if (!this.isProgramLoaded) {
 			this.loadProgram(path);
-			this.isProgramLoaded=true;
+			this.isProgramLoaded = true;
 		}
 		const bp: IMockBreakpoint = { verified: false, line, id: this._breakpointId++ };
 		let bps = this._breakPoints.get(path);
@@ -307,7 +417,7 @@ export class MockRuntime extends EventEmitter {
 			this._breakPoints.set(path, bps);
 		}
 		bps.push(bp);
-
+		console.dir(this._messageSender);
 		this.verifyBreakpoints(path);
 
 		return bp;
@@ -396,9 +506,9 @@ export class MockRuntime extends EventEmitter {
 	// private methods
 
 	private loadSource(file: string) {
-		if (!this._sourceFiles.get(file)){
-			const lines:string[]=readFileSync(file).toString().split('\n');
-			this._sourceFiles.set(file,lines);
+		if (!this._sourceFiles.get(file)) {
+			const lines: string[] = readFileSync(file).toString().split('\n');
+			this._sourceFiles.set(file, lines);
 		}
 
 		// if (this._sourceFile !== file) {
@@ -411,18 +521,12 @@ export class MockRuntime extends EventEmitter {
 	 * Run through the file.
 	 * If stepEvent is specified only run a single step and emit the stepEvent.
 	 */
-	private run(reverse = false, breakpointStop,path:string, stepEvent?: string,) {
-		let fullPath;
-		for (let key of this._sourceFiles.keys()) {
-			if (key.endsWith(path)){
-				fullPath=key;
-			}
-		}
-		this._currentFile=fullPath;
-		let lines=this._sourceFiles.get(fullPath);
+	private run(reverse = false, breakpointStop, stepEvent?: string,) {
+
+		let lines = this._sourceFiles.get(this._currentFile);
 		if (reverse) {
 			for (let ln = this._currentLine - 1; ln >= 0; ln--) {
-				if (this.fireEventsForLine(ln, breakpointStop,'', stepEvent)) {
+				if (this.fireEventsForLine(ln, breakpointStop, stepEvent)) {
 					this._currentLine = ln;
 					this._currentColumn = undefined;
 					return;
@@ -433,9 +537,9 @@ export class MockRuntime extends EventEmitter {
 			this._currentColumn = undefined;
 			this.sendEvent('stopOnEntry');
 		} else {
-			if (lines){
+			if (lines) {
 				for (let ln = this._currentLine + 1; ln < lines?.length; ln++) {
-					if (this.fireEventsForLine(ln, breakpointStop,fullPath, stepEvent)) {
+					if (this.fireEventsForLine(ln, breakpointStop, stepEvent)) {
 						this._currentLine = ln;
 						this._currentColumn = undefined;
 						return true;
@@ -444,7 +548,7 @@ export class MockRuntime extends EventEmitter {
 				// no more lines: run to end
 				this.sendEvent('end');
 			}
-			
+
 		}
 	}
 
@@ -467,40 +571,17 @@ export class MockRuntime extends EventEmitter {
 	}
 
 	/**
-	 * Fire events if line has a breakpoint or the word 'exception' is found.
+	 * Fire events if line has a breakpoint
 	 * Returns true is execution needs to stop.
 	 */
-	private fireEventsForLine(ln: number, breakpointStop: IMockBreakpoint,path:string, stepEvent?: string): boolean {
+	private fireEventsForLine(ln: number, breakpointStop: IMockBreakpoint, stepEvent?: string): boolean {
 
 		if (this._noDebug) {
 			return false;
 		}
 
-		//const line = this._sourceLines[ln].trim();
-
-		// if 'log(...)' found in source -> send argument to debug console
-		// const matches = /log\((.*)\)/.exec(line);
-		// if (matches && matches.length === 2) {
-		// 	this.sendEvent('output', matches[1], this._sourceFile, ln, matches.index);
-		// }
-
-		// if a word in a line matches a data breakpoint, fire a 'dataBreakpoint' event
-		// const words = line.split(" ");
-		// for (const word of words) {
-		// 	if (this._breakAddresses.has(word)) {
-		// 		this.sendEvent('stopOnDataBreakpoint');
-		// 		return true;
-		// 	}
-		// }
-
-		// // if word 'exception' found in source -> throw exception
-		// if (line.indexOf('exception') >= 0) {
-		// 	this.sendEvent('stopOnException');
-		// 	return true;
-		// }
-
 		//is there a breakpoint?
-		const breakpoints = this._breakPoints.get(path);
+		const breakpoints = this._breakPoints.get(this._currentFile);
 		if (breakpoints) {
 			const bps = breakpoints.filter(bp => bp.line === ln);
 			if (bps.length > 0) {
@@ -519,8 +600,8 @@ export class MockRuntime extends EventEmitter {
 
 
 
-		 	}
-		 }
+			}
+		}
 
 		// non-empty line
 		// if (stepEvent && line.length > 0) {
@@ -550,6 +631,16 @@ export class MockRuntime extends EventEmitter {
 		// this._messageSender.stdin.write(clearBreakpointCommand);
 
 	}
+	public getFileFullPath(file: string): string {
+		let fullPath;
+		for (let key of this._sourceFiles.keys()) {
+			if (key.endsWith(file)) {
+				fullPath = key;
+			}
+		}
+		return fullPath;
+	}
+
 	private addBreakPointDebugger(ln: number, path: string) {
 		let programFile = path.split("\\")[7];
 		let setBreakpointCommand = 'break ' + programFile + ':' + (ln + 1).toString() + '\n';
@@ -613,9 +704,9 @@ export class MockRuntime extends EventEmitter {
 
 
 			}
-			this._simulator.stdout.on('data', async (data) => {
-				console.log(data);
-			});
+			// this._simulator.stdout.on('data', async (data) => {
+			// 	console.log(data);
+			// });
 			//this.debuggerMiddleware.onData(data);
 		});
 		this._messageSender.stderr.on('data', (err) => {

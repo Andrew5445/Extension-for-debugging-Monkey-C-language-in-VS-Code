@@ -7,10 +7,11 @@ import {
 	LoggingDebugSession,
 	InitializedEvent, TerminatedEvent, StoppedEvent, BreakpointEvent, OutputEvent,
 	ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent,
-	Thread, StackFrame, Scope, Source, Handles, Breakpoint,Variable} from 'vscode-debugadapter';
+	Thread, StackFrame, Scope, Source, Handles, Breakpoint, Variable
+} from 'vscode-debugadapter';
 import { DebugProtocol } from 'vscode-debugprotocol';
 import { basename } from 'path';
-import { MockRuntime, IMockBreakpoint,IMockVariable } from './mockRuntime';
+import { MockRuntime, IMockBreakpoint, IMockVariable } from './mockRuntime';
 import { Subject } from 'await-notify';
 
 function timeout(ms: number) {
@@ -47,9 +48,9 @@ export class MockDebugSession extends LoggingDebugSession {
 
 	private _configurationDone = new Subject();
 
-	
-	
-	
+
+
+
 
 	private _cancelationTokens = new Map<number, boolean>();
 	private _isLongrunning = new Map<number, boolean>();
@@ -137,13 +138,15 @@ export class MockDebugSession extends LoggingDebugSession {
 
 		// make VS Code to support completion in REPL
 		response.body.supportsCompletionsRequest = true;
-		response.body.completionTriggerCharacters = [ ".", "[" ];
+		response.body.completionTriggerCharacters = [".", "["];
+		//support variable type
+
 
 		// make VS Code to send cancelRequests
 		response.body.supportsCancelRequest = true;
-		
 
-		response.body.supportsTerminateRequest=true;
+
+		response.body.supportsTerminateRequest = true;
 		// make VS Code send the breakpointLocations request
 		response.body.supportsBreakpointLocationsRequest = true;
 
@@ -167,8 +170,8 @@ export class MockDebugSession extends LoggingDebugSession {
 	 */
 	protected configurationDoneRequest(response: DebugProtocol.ConfigurationDoneResponse, args: DebugProtocol.ConfigurationDoneArguments): void {
 		super.configurationDoneRequest(response, args);
-		
-		
+
+
 		// notify the launchRequest that configuration has finished
 		this._configurationDone.notify();
 	}
@@ -181,7 +184,7 @@ export class MockDebugSession extends LoggingDebugSession {
 		// wait until configuration has finished (and configurationDoneRequest has been called)
 		//await
 		await this._configurationDone.wait(1000);
-		
+
 		// start the program in the runtime
 		//const load= await this._runtime.loadTheDebugger(args.program);
 		//await this._runtime.startheDebuggerAndSimulator(args.program);
@@ -201,7 +204,7 @@ export class MockDebugSession extends LoggingDebugSession {
 		const actualBreakpoints = clientLines.map(l => {
 			const { verified, line, id } = this._runtime.setBreakPoint(path, this.convertClientLineToDebugger(l));
 			const bp = new Breakpoint(verified, this.convertDebuggerLineToClient(line)) as DebugProtocol.Breakpoint;
-			bp.id= id;
+			bp.id = id;
 			return bp;
 		});
 
@@ -244,17 +247,17 @@ export class MockDebugSession extends LoggingDebugSession {
 		this.sendResponse(response);
 	}
 
-	protected stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): void {
+	protected async stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): Promise<void> {
 
 		const startFrame = typeof args.startFrame === 'number' ? args.startFrame : 0;
 		const maxLevels = typeof args.levels === 'number' ? args.levels : 1000;
 		const endFrame = startFrame + maxLevels;
 
-		const stk = this._runtime.stack(startFrame, endFrame);
-
+		const stk = await this._runtime.stack(startFrame, endFrame);
+		console.dir(stk);
 		response.body = {
 			stackFrames: stk.frames.map(f => {
-				const sf = new StackFrame(f.index, f.name, this.createSource(f.file), this.convertDebuggerLineToClient(f.line));
+				const sf = new StackFrame(f.index, f.name, this.createSource(f.file), f.line);
 				if (typeof f.column === 'number') {
 					sf.column = this.convertDebuggerColumnToClient(f.column);
 				}
@@ -277,81 +280,19 @@ export class MockDebugSession extends LoggingDebugSession {
 	}
 
 	protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request) {
-		
-		const variables: Variable[] = [];
-		const actualVariables:IMockVariable[]=await this._runtime.getVariablesInfoFromDebugger();
-		actualVariables.forEach((variable)=>{
-		//console.log(variable.name);
-		variables.push({name:variable.name,value:variable.value,variablesReference:0});
-		
+
+		const variables: DebugProtocol.Variable[] = [];
+		let actualVariables: IMockVariable[] = [];
+		console.log(args.variablesReference);
+		if (this._variableHandles.get(args.variablesReference) === 'local') {
+			actualVariables = await this._runtime.getVariablesInfoFromDebugger(this._variableHandles);
+		}
+		else {
+			actualVariables = await this._runtime.getChildVariablesInfoFromDebugger(this._variableHandles, this._variableHandles.get(args.variablesReference));
+		}
+		actualVariables.forEach((variable) => {
+			variables.push({ name: variable.name, value: variable.value, variablesReference: variable.variablesReference, type: variable.type });
 		});
-		// if (this._isLongrunning.get(args.variablesReference)) {
-		// 	// long running
-
-		// 	if (request) {
-		// 		this._cancelationTokens.set(request.seq, false);
-		// 	}
-
-		// 	for (let i = 0; i < 100; i++) {
-		// 		await timeout(1000);
-		// 		variables.push({
-		// 			name: `i_${i}`,
-		// 			type: "integer",
-		// 			value: `${i}`,
-		// 			variablesReference: 0
-		// 		});
-		// 		if (request && this._cancelationTokens.get(request.seq)) {
-		// 			break;
-		// 		}
-		// 	}
-
-		// 	if (request) {
-		// 		this._cancelationTokens.delete(request.seq);
-		// 	}
-
-		// } else {
-
-		// 	const id = this._variableHandles.get(args.variablesReference);
-
-		// 	if (id) {
-		// 		variables.push({
-		// 			name: id + "_i",
-		// 			type: "integer",
-		// 			value: "123",
-		// 			__vscodeVariableMenuContext: "simple",
-		// 			variablesReference: 0
-		// 		} as DebugProtocol.Variable);
-		// 		variables.push({
-		// 			name: id + "_f",
-		// 			type: "float",
-		// 			value: "3.14",
-		// 			variablesReference: 0
-		// 		});
-		// 		variables.push({
-		// 			name: id + "_s",
-		// 			type: "string",
-		// 			value: "hello world",
-		// 			variablesReference: 0
-		// 		});
-		// 		variables.push({
-		// 			name: id + "_o",
-		// 			type: "object",
-		// 			value: "Object",
-		// 			variablesReference: this._variableHandles.create(id + "_o")
-		// 		});
-
-		// 		// cancellation support for long running requests
-		// 		const nm = id + "_long_running";
-		// 		const ref = this._variableHandles.create(id + "_lr");
-		// 		variables.push({
-		// 			name: nm,
-		// 			type: "object",
-		// 			value: "Object",
-		// 			variablesReference: ref
-		// 		});
-		// 		this._isLongrunning.set(ref, true);
-		// 	}
-		// }
 
 		response.body = {
 			variables: variables
@@ -360,14 +301,14 @@ export class MockDebugSession extends LoggingDebugSession {
 	}
 
 	protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
-		 this._runtime.continue();
+		this._runtime.continue();
 		this.sendResponse(response);
 	}
 
 	protected reverseContinueRequest(response: DebugProtocol.ReverseContinueResponse, args: DebugProtocol.ReverseContinueArguments): void {
 		this._runtime.continue(true);
 		this.sendResponse(response);
- 	}
+	}
 
 	protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
 		this._runtime.step();
@@ -477,18 +418,18 @@ export class MockDebugSession extends LoggingDebugSession {
 	protected dataBreakpointInfoRequest(response: DebugProtocol.DataBreakpointInfoResponse, args: DebugProtocol.DataBreakpointInfoArguments): void {
 
 		response.body = {
-            dataId: null,
-            description: "cannot break on data access",
-            accessTypes: undefined,
-            canPersist: false
-        };
+			dataId: null,
+			description: "cannot break on data access",
+			accessTypes: undefined,
+			canPersist: false
+		};
 
 		if (args.variablesReference && args.name) {
 			const id = this._variableHandles.get(args.variablesReference);
 			if (id.startsWith("global_")) {
 				response.body.dataId = args.name;
 				response.body.description = args.name;
-				response.body.accessTypes = [ "read" ];
+				response.body.accessTypes = ["read"];
 				response.body.canPersist = true;
 			}
 		}
@@ -553,14 +494,14 @@ export class MockDebugSession extends LoggingDebugSession {
 			this._cancelationTokens.set(args.requestId, true);
 		}
 		if (args.progressId) {
-			this._cancelledProgressId= args.progressId;
+			this._cancelledProgressId = args.progressId;
 		}
 	}
 
 	protected terminateRequest(response: DebugProtocol.TerminateResponse, args: DebugProtocol.TerminateArguments) {
 
 		this._runtime.killMessageSenderAndSimulatorProcesses();
-		
+
 
 		this.sendResponse(response);
 	}
