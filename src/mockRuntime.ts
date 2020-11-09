@@ -42,7 +42,7 @@ interface IStack {
  * A Mock runtime with minimal debugger functionality.
  */
 export class MockRuntime extends EventEmitter {
-
+	private currentWorkspaceFolder;
 
 	// the initial (and one and only) file we are 'debugging'
 	private _sourceFiles = new Map<string, string[]>();
@@ -81,8 +81,9 @@ export class MockRuntime extends EventEmitter {
 	/**
 	 * Start executing the given program.
 	 */
-	public async start(program: string, stopOnEntry: boolean, noDebug: boolean) {
+	public async start(program: string, stopOnEntry: boolean, noDebug: boolean,workspaceFolder:string) {
 
+		//this.workspaceFolder=workspaceFolder;
 		this._noDebug = noDebug;
 
 		this.loadSource(program);
@@ -127,7 +128,7 @@ export class MockRuntime extends EventEmitter {
 
 		if (info) {
 			const breakpointStop: IMockBreakpoint = { id: Number(info[1]), line: Number(info[3]) - 1, verified: true };
-			this.run(reverse, breakpointStop, undefined);
+			this.run(reverse, Number(info[3]) - 1, undefined);
 		}
 
 
@@ -139,27 +140,53 @@ export class MockRuntime extends EventEmitter {
 	/**
 	 * Step to the next/previous non empty line.
 	 */
-	public step(reverse = false, event = 'stopOnStep') {
-		this.run(reverse, null, event);
+	public async step(reverse = false, event = 'stopOnStep') {
+		this._messageSender.stdin.write(Buffer.from('next\n'));
+		this._messageSender.stdin.write(Buffer.from('frame\n'));
+		const output: string = await new Promise((resolve) => {
+			this.debuggerMiddleware.waitForData(resolve, "nextInfo");
+
+
+		});
+		const nextInfo=output.match(/#([0-9]+)\s+(.*)\s.*at (.*):([0-9]+)/);
+		if (nextInfo){
+			this._currentFile=this.getFileFullPath(nextInfo[3]);
+
+			this.run(reverse,Number(nextInfo[4])-1, event);
+		}
+
 	}
 
 	/**
 	 * "Step into" for Mock debug means: go to next character
 	 */
-	public stepIn(targetId: number | undefined) {
-		if (typeof targetId === 'number') {
-			this._currentColumn = targetId;
-			this.sendEvent('stopOnStep');
-		} else {
-			if (typeof this._currentColumn === 'number') {
-				if (this._currentColumn <= this._sourceLines[this._currentLine].length) {
-					this._currentColumn += 1;
-				}
-			} else {
-				this._currentColumn = 1;
-			}
-			this.sendEvent('stopOnStep');
+	public async stepIn(targetId: number | undefined,event='stopOnStep') {
+		this._messageSender.stdin.write(Buffer.from('step\n'));
+		this._messageSender.stdin.write(Buffer.from('frame\n'));
+		const output: string = await new Promise((resolve) => {
+			this.debuggerMiddleware.waitForData(resolve, "nextInfo");
+
+
+		});
+		const nextInfo=output.match(/#([0-9]+)\s+(.*)\s.*at (.*):([0-9]+)/);
+		if (nextInfo){
+			this._currentFile=this.getFileFullPath(nextInfo[3]);
+
+			this.run(false,Number(nextInfo[4])-1, event);
 		}
+		// if (typeof targetId === 'number') {
+		// 	this._currentColumn = targetId;
+		// 	this.sendEvent('stopOnStep');
+		// } else {
+		// 	if (typeof this._currentColumn === 'number') {
+		// 		if (this._currentColumn <= this._sourceLines[this._currentLine].length) {
+		// 			this._currentColumn += 1;
+		// 		}
+		// 	} else {
+		// 		this._currentColumn = 1;
+		// 	}
+		// 	this.sendEvent('stopOnStep');
+		// }
 	}
 
 	/**
@@ -521,25 +548,25 @@ export class MockRuntime extends EventEmitter {
 	 * Run through the file.
 	 * If stepEvent is specified only run a single step and emit the stepEvent.
 	 */
-	private run(reverse = false, breakpointStop, stepEvent?: string,) {
+	private run(reverse = false,lineStop:Number, stepEvent?: string) {
 
 		let lines = this._sourceFiles.get(this._currentFile);
-		if (reverse) {
-			for (let ln = this._currentLine - 1; ln >= 0; ln--) {
-				if (this.fireEventsForLine(ln, breakpointStop, stepEvent)) {
-					this._currentLine = ln;
-					this._currentColumn = undefined;
-					return;
-				}
-			}
-			// no more lines: stop at first line
-			this._currentLine = 0;
-			this._currentColumn = undefined;
-			this.sendEvent('stopOnEntry');
-		} else {
+		// if (reverse) {
+		// 	if (lines) {
+		// 	for (let ln = -1; ln < lines?.length; ln++) {
+		// 		if (this.fireEventsForLine(ln, breakpointStop, stepEvent)) {
+		// 			return;
+		// 		}
+		// 	}
+		// }
+		// 	// no more lines: stop at first line
+		// 	this._currentLine = 0;
+		// 	this._currentColumn = undefined;
+		// 	this.sendEvent('stopOnEntry');
+		
 			if (lines) {
-				for (let ln = this._currentLine + 1; ln < lines?.length; ln++) {
-					if (this.fireEventsForLine(ln, breakpointStop, stepEvent)) {
+				for (let ln = -1; ln < lines?.length; ln++) {
+					if (this.fireEventsForLine(ln, lineStop, stepEvent)) {
 						this._currentLine = ln;
 						this._currentColumn = undefined;
 						return true;
@@ -549,7 +576,7 @@ export class MockRuntime extends EventEmitter {
 				this.sendEvent('end');
 			}
 
-		}
+		
 	}
 
 	private verifyBreakpoints(path: string) {
@@ -574,7 +601,7 @@ export class MockRuntime extends EventEmitter {
 	 * Fire events if line has a breakpoint
 	 * Returns true is execution needs to stop.
 	 */
-	private fireEventsForLine(ln: number, breakpointStop: IMockBreakpoint, stepEvent?: string): boolean {
+	private fireEventsForLine(ln: number, lineStop:Number, stepEvent?: string): boolean {
 
 		if (this._noDebug) {
 			return false;
@@ -593,7 +620,7 @@ export class MockRuntime extends EventEmitter {
 					return false;
 				}
 				// send 'stopped' event
-				if (breakpointStop.id === bps[0].id && breakpointStop.line === bps[0].line) {
+				if (lineStop === bps[0].line) {
 					this.sendEvent('stopOnBreakpoint');
 					return true;
 				}
@@ -604,10 +631,10 @@ export class MockRuntime extends EventEmitter {
 		}
 
 		// non-empty line
-		// if (stepEvent && line.length > 0) {
-		// 	this.sendEvent(stepEvent);
-		// 	return true;
-		// }
+		 if (stepEvent) {
+			this.sendEvent(stepEvent);
+			return true;
+		}
 
 		// nothing interesting found -> continue
 		return false;
@@ -678,7 +705,7 @@ export class MockRuntime extends EventEmitter {
 				if (outputLines.length > 0) {
 					let lastIndex;
 					//var re = new RegExp(/(.|\n|\r)*(mdd)/);
-					if (/(.|\n|\r)*(mdd)/.test(this.buffer)) {
+					if (/(.|\n|\r)*[(]mdd[)]\s$/.test(this.buffer)) {
 						lastIndex = outputLines.length - 1;
 					}
 					else {
@@ -690,9 +717,12 @@ export class MockRuntime extends EventEmitter {
 						}
 					}
 					for (let index = 0; index <= lastIndex; index++) {
-						console.log(outputLines[index] + "\n");
-						this.debuggerMiddleware.onData(outputLines[index].trim());
-						this.buffer = this.buffer.replace(outputLines[index] + "(mdd) ", "");
+						
+							console.log(outputLines[index] + "\n");
+							this.debuggerMiddleware.onData(outputLines[index].trim());
+							this.buffer = this.buffer.replace(outputLines[index] + "(mdd) ", "");
+						
+					
 					}
 
 				}

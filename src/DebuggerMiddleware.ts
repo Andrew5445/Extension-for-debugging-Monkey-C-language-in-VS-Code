@@ -37,6 +37,12 @@ export class DebuggerMiddleware {
                         }
 
                     }
+                    if (waitingFunction.action === "nextInfo"){
+                        if (str.startsWith('#')) {
+                            waitingFunction.fn(str);
+                            this.removeWaitingFunction(waitingFunction);
+                        }
+                    }
                     if (waitingFunction.action.startsWith('childVariablesInfo') ||/No symbol ".*" in current context./.test(str)) {
                         if (str.startsWith(waitingFunction.action.split('_')[1])) {
                             waitingFunction.fn(str);

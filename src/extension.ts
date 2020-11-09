@@ -144,6 +144,7 @@ class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
 				config.name = 'Launch';
 				config.request = 'launch';
 				config.program = '${file}';
+				config.workspaceFolder = '${workspaceFolder}';
 				config.stopOnEntry = true;
 			}
 		}

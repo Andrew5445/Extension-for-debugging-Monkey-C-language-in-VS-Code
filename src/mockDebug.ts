@@ -28,6 +28,7 @@ function timeout(ms: number) {
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	/** An absolute path to the "program" to debug. */
 	program: string;
+	workspaceFolder:string
 	/** Automatically stop target after launch. If not specified, target does not stop. */
 	stopOnEntry?: boolean;
 	/** enable logging the Debug Adapter Protocol */
@@ -188,7 +189,7 @@ export class MockDebugSession extends LoggingDebugSession {
 		// start the program in the runtime
 		//const load= await this._runtime.loadTheDebugger(args.program);
 		//await this._runtime.startheDebuggerAndSimulator(args.program);
-		this._runtime.start(args.program, !args.stopOnEntry, !!args.noDebug);
+		this._runtime.start(args.program, !args.stopOnEntry, !!args.noDebug,args.workspaceFolder);
 		this.sendResponse(response);
 	}
 
