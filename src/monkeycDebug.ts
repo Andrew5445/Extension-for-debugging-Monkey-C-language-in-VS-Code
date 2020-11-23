@@ -6,17 +6,18 @@ import {
 	Logger, logger,
 	LoggingDebugSession,
 	InitializedEvent, TerminatedEvent, StoppedEvent, BreakpointEvent, OutputEvent,
-	ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent,
-	Thread, StackFrame, Scope, Source, Handles, Breakpoint, Variable
+	// ProgressStartEvent, ProgressUpdateEvent, ProgressEndEvent,
+	Thread, StackFrame, Scope, Source, Handles, Breakpoint
 } from 'vscode-debugadapter';
 import { DebugProtocol } from 'vscode-debugprotocol';
 import { basename } from 'path';
-import { MockRuntime, IMockBreakpoint, IMockVariable } from './mockRuntime';
+import { MockRuntime, IMockBreakpoint, IMockVariable } from './monkeycRuntime';
 import { Subject } from 'await-notify';
+import * as vscode from 'vscode';
 
-function timeout(ms: number) {
-	return new Promise(resolve => setTimeout(resolve, ms));
-}
+// function timeout(ms: number) {
+// 	return new Promise(resolve => setTimeout(resolve, ms));
+// }
 
 /**
  * This interface describes the mock-debug specific launch attributes
@@ -28,7 +29,7 @@ function timeout(ms: number) {
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	/** An absolute path to the "program" to debug. */
 	program: string;
-	workspaceFolder:string
+	workspaceFolder: string
 	/** Automatically stop target after launch. If not specified, target does not stop. */
 	stopOnEntry?: boolean;
 	/** enable logging the Debug Adapter Protocol */
@@ -53,13 +54,13 @@ export class MockDebugSession extends LoggingDebugSession {
 
 
 
-	private _cancelationTokens = new Map<number, boolean>();
-	private _isLongrunning = new Map<number, boolean>();
+	//private _cancelationTokens = new Map<number, boolean>();
+	// private _isLongrunning = new Map<number, boolean>();
 
-	private _reportProgress = false;
-	private _progressId = 10000;
-	private _cancelledProgressId: string | undefined = undefined;
-	private _isProgressCancellable = true;
+	//private _reportProgress = false;
+	// private _progressId = 10000;
+	// private _cancelledProgressId: string | undefined = undefined;
+	// private _isProgressCancellable = true;
 
 	/**
 	 * Creates a new debug adapter that is used for one debug session.
@@ -118,9 +119,9 @@ export class MockDebugSession extends LoggingDebugSession {
 	 */
 	protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments): void {
 
-		if (args.supportsProgressReporting) {
-			this._reportProgress = true;
-		}
+		// if (args.supportsProgressReporting) {
+		// 	this._reportProgress = true;
+		// }
 
 		// build and return the capabilities of this debug adapter:
 		response.body = response.body || {};
@@ -155,8 +156,12 @@ export class MockDebugSession extends LoggingDebugSession {
 		response.body.supportsStepInTargetsRequest = true;
 
 		//start debugger and simulator
+		
+		if (vscode.workspace.workspaceFolders) {
+			this._runtime.setCurrentWorkspaceFolder(vscode.workspace.workspaceFolders[0].uri.fsPath);
+			this._runtime.startheDebuggerAndSimulator();
+		}
 
-		this._runtime.startheDebuggerAndSimulator();
 		this.sendResponse(response);
 
 		// since this debug adapter can accept configuration requests like 'setBreakpoint' at any time,
@@ -189,7 +194,7 @@ export class MockDebugSession extends LoggingDebugSession {
 		// start the program in the runtime
 		//const load= await this._runtime.loadTheDebugger(args.program);
 		//await this._runtime.startheDebuggerAndSimulator(args.program);
-		this._runtime.start(args.program, !args.stopOnEntry, !!args.noDebug,args.workspaceFolder);
+		this._runtime.start(args.program, !args.stopOnEntry, !!args.noDebug);
 		this.sendResponse(response);
 	}
 
@@ -301,8 +306,8 @@ export class MockDebugSession extends LoggingDebugSession {
 		this.sendResponse(response);
 	}
 
-	protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
-		this._runtime.continue();
+	protected async continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments) {
+		await this._runtime.continue();
 		this.sendResponse(response);
 	}
 
@@ -385,36 +390,36 @@ export class MockDebugSession extends LoggingDebugSession {
 		// this.sendResponse(response);
 	}
 
-	private async progressSequence() {
+	// private async progressSequence() {
 
-		const ID = '' + this._progressId++;
+	// 	const ID = '' + this._progressId++;
 
-		await timeout(100);
+	// 	await timeout(100);
 
-		const title = this._isProgressCancellable ? 'Cancellable operation' : 'Long running operation';
-		const startEvent: DebugProtocol.ProgressStartEvent = new ProgressStartEvent(ID, title);
-		startEvent.body.cancellable = this._isProgressCancellable;
-		this._isProgressCancellable = !this._isProgressCancellable;
-		this.sendEvent(startEvent);
-		this.sendEvent(new OutputEvent(`start progress: ${ID}\n`));
+	// 	const title = this._isProgressCancellable ? 'Cancellable operation' : 'Long running operation';
+	// 	const startEvent: DebugProtocol.ProgressStartEvent = new ProgressStartEvent(ID, title);
+	// 	startEvent.body.cancellable = this._isProgressCancellable;
+	// 	this._isProgressCancellable = !this._isProgressCancellable;
+	// 	this.sendEvent(startEvent);
+	// 	this.sendEvent(new OutputEvent(`start progress: ${ID}\n`));
 
-		let endMessage = 'progress ended';
+	// 	let endMessage = 'progress ended';
 
-		for (let i = 0; i < 100; i++) {
-			await timeout(500);
-			this.sendEvent(new ProgressUpdateEvent(ID, `progress: ${i}`));
-			if (this._cancelledProgressId === ID) {
-				endMessage = 'progress cancelled';
-				this._cancelledProgressId = undefined;
-				this.sendEvent(new OutputEvent(`cancel progress: ${ID}\n`));
-				break;
-			}
-		}
-		this.sendEvent(new ProgressEndEvent(ID, endMessage));
-		this.sendEvent(new OutputEvent(`end progress: ${ID}\n`));
+	// 	for (let i = 0; i < 100; i++) {
+	// 		await timeout(500);
+	// 		this.sendEvent(new ProgressUpdateEvent(ID, `progress: ${i}`));
+	// 		if (this._cancelledProgressId === ID) {
+	// 			endMessage = 'progress cancelled';
+	// 			this._cancelledProgressId = undefined;
+	// 			this.sendEvent(new OutputEvent(`cancel progress: ${ID}\n`));
+	// 			break;
+	// 		}
+	// 	}
+	// 	this.sendEvent(new ProgressEndEvent(ID, endMessage));
+	// 	this.sendEvent(new OutputEvent(`end progress: ${ID}\n`));
 
-		this._cancelledProgressId = undefined;
-	}
+	// 	this._cancelledProgressId = undefined;
+	// }
 
 	protected dataBreakpointInfoRequest(response: DebugProtocol.DataBreakpointInfoResponse, args: DebugProtocol.DataBreakpointInfoArguments): void {
 
@@ -491,17 +496,17 @@ export class MockDebugSession extends LoggingDebugSession {
 	}
 
 	protected cancelRequest(response: DebugProtocol.CancelResponse, args: DebugProtocol.CancelArguments) {
-		if (args.requestId) {
-			this._cancelationTokens.set(args.requestId, true);
-		}
-		if (args.progressId) {
-			this._cancelledProgressId = args.progressId;
-		}
+		// if (args.requestId) {
+		// 	this._cancelationTokens.set(args.requestId, true);
+		// }
+		// if (args.progressId) {
+		// 	this._cancelledProgressId = args.progressId;
+		// }
 	}
 
 	protected terminateRequest(response: DebugProtocol.TerminateResponse, args: DebugProtocol.TerminateArguments) {
 
-		this._runtime.killMessageSenderAndSimulatorProcesses();
+		//this._runtime.killMessageSenderAndSimulatorProcesses();
 
 
 		this.sendResponse(response);

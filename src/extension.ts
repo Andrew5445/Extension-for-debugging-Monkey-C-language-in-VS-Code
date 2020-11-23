@@ -11,7 +11,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { platform } from 'process';
 import { WorkspaceFolder, DebugConfiguration, ProviderResult, CancellationToken } from 'vscode';
-import { MockDebugSession } from './mockDebug';
+import { MockDebugSession } from './monkeycDebug';
 
 /*
  * The compile time flag 'runMode' controls how the debug adapter is run.

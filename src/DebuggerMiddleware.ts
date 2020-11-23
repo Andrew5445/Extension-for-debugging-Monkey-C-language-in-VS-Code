@@ -1,12 +1,11 @@
-interface IwaitingFunction {
+interface IWaitingFunction {
     fn: Function;
     action: string;
-
 }
 
 
 export class DebuggerMiddleware {
-    private waitingFunctions: IwaitingFunction[] = [];
+    private waitingFunctions: IWaitingFunction[] = [];
     //private action:string="";
     public onData(str: string) {
 
@@ -62,7 +61,7 @@ export class DebuggerMiddleware {
         // this.waitingFunction=fn;
         // this.action=action;
     }
-    public removeWaitingFunction(fn: IwaitingFunction) {
+    public removeWaitingFunction(fn: IWaitingFunction) {
         this.waitingFunctions = this.waitingFunctions.filter(obj => obj !== fn);
     }
 }
