@@ -13,7 +13,7 @@ import { DebugProtocol } from 'vscode-debugprotocol';
 import { basename } from 'path';
 import { MockRuntime, IMockBreakpoint, IMockVariable } from './monkeycRuntime';
 import { Subject } from 'await-notify';
-import * as vscode from 'vscode';
+// import * as vscode from 'vscode';
 
 // function timeout(ms: number) {
 // 	return new Promise(resolve => setTimeout(resolve, ms));
@@ -29,7 +29,8 @@ import * as vscode from 'vscode';
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	/** An absolute path to the "program" to debug. */
 	program: string;
-	workspaceFolder: string
+	sdkPath: string;
+	workspaceFolder: string;
 	/** Automatically stop target after launch. If not specified, target does not stop. */
 	stopOnEntry?: boolean;
 	/** enable logging the Debug Adapter Protocol */
@@ -50,6 +51,7 @@ export class MockDebugSession extends LoggingDebugSession {
 
 	private _configurationDone = new Subject();
 
+	private _launchDone = new Subject();
 
 
 
@@ -110,7 +112,6 @@ export class MockDebugSession extends LoggingDebugSession {
 		this._runtime.on('end', () => {
 			this.sendEvent(new TerminatedEvent());
 		});
-		//this._runtime.loadTheDebugger();
 	}
 
 	/**
@@ -155,13 +156,7 @@ export class MockDebugSession extends LoggingDebugSession {
 		// make VS Code provide "Step in Target" functionality
 		response.body.supportsStepInTargetsRequest = true;
 
-		//start debugger and simulator
 		
-		if (vscode.workspace.workspaceFolders) {
-			this._runtime.setCurrentWorkspaceFolder(vscode.workspace.workspaceFolders[0].uri.fsPath);
-			this._runtime.startheDebuggerAndSimulator();
-		}
-
 		this.sendResponse(response);
 
 		// since this debug adapter can accept configuration requests like 'setBreakpoint' at any time,
@@ -182,24 +177,17 @@ export class MockDebugSession extends LoggingDebugSession {
 		this._configurationDone.notify();
 	}
 
-	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
+	protected launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
 
 		// make sure to 'Stop' the buffered logging if 'trace' is not set
 		logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
-
-		// wait until configuration has finished (and configurationDoneRequest has been called)
-		//await
-		await this._configurationDone.wait(1000);
-
-		// start the program in the runtime
-		//const load= await this._runtime.loadTheDebugger(args.program);
-		//await this._runtime.startheDebuggerAndSimulator(args.program);
-		this._runtime.start(args.program, !args.stopOnEntry, !!args.noDebug);
+	
+		this._runtime.start(args.program, args.sdkPath,args.workspaceFolder, !args.stopOnEntry, !!args.noDebug, this._launchDone, this._configurationDone);
 		this.sendResponse(response);
 	}
 
 	protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments) {
-
+		this._launchDone.wait(1000);
 		const path = args.source.path as string;
 		const clientLines = args.lines || [];
 

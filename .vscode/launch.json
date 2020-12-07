@@ -49,7 +49,6 @@
 			"type": "mock",
 			"request": "launch",
 			"program": "${workspaceFolder}/${command:AskForProgramName}",
-			"":"${workspaceFolder}",
 			"stopOnEntry": true
 		}
 	],

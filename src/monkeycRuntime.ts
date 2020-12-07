@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';
 import { spawn } from 'child_process';
 import { DebuggerMiddleware } from './debuggerMiddleware';
 import { glob } from 'glob';
+var path = require('path');
 
 export interface IMockBreakpoint {
 	id: number;
@@ -43,7 +44,7 @@ interface IStack {
  */
 export class MockRuntime extends EventEmitter {
 	private _currentWorkspaceFolder;
-	private _pathToDevKey = 'C:\\Users\\ondre\\Desktop\\GARMIN SDK\\developer_key.der';
+	private _sdkPath;
 	// the initial (and one and only) file we are 'debugging'
 	private _sourceFiles = new Map<string, string[]>();
 	public get sourceFiles() {
@@ -70,7 +71,7 @@ export class MockRuntime extends EventEmitter {
 	private debuggerMiddleware = new DebuggerMiddleware();
 	private _noDebug = false;
 	private isStarted = false;
-	private isProgramLoaded = false;
+	//private isProgramLoaded = false;
 	//child process which will send commands to the monkeyC debugger
 	private _messageSender;
 	private _simulator;
@@ -84,24 +85,30 @@ export class MockRuntime extends EventEmitter {
 	/**
 	 * Start executing the given program.
 	 */
-	public async start(program: string, stopOnEntry: boolean, noDebug: boolean) {
+	public async start(program: string, sdkPath: string, workspaceFolder: string, stopOnEntry: boolean, noDebug: boolean, launchDone, configurationDone) {
 
-		
+
 		this._noDebug = noDebug;
 
 		this.loadSource(program);
 
+
+		this._currentWorkspaceFolder = workspaceFolder;
+		this._sdkPath = sdkPath;
 		const files = glob.sync(this._currentWorkspaceFolder + '/**/*.mc');
 		files.forEach(element => {
-			const path = element.replace(/[/]/g, '\\');
-			if (!this.sourceFiles.get(path)) {
-				this._sourceFiles.set(path, []);
+			const path_ = path.normalize(element).charAt(0).toLowerCase() + path.normalize(element).slice(1);
+			if (!this.sourceFiles.get(path_)) {
+				this._sourceFiles.set(path_, []);
 			}
 
 		});
 
-		this._currentLine = -1;
+		this.launchDebugger();
 
+		launchDone.notify();
+		this._currentLine = -1;
+		await configurationDone.wait(1000);
 		//this.verifyBreakpoints(this._sourceFile);
 
 		if (stopOnEntry) {
@@ -153,7 +160,7 @@ export class MockRuntime extends EventEmitter {
 		if (nextInfo) {
 
 			this._currentFile = this.getFileFullPath(nextInfo[3]);
-			this.loadSource(nextInfo[3]);
+			//this.loadSource(nextInfo[3]);
 			this.run(reverse, Number(nextInfo[4]) - 1, event);
 		}
 
@@ -376,10 +383,10 @@ export class MockRuntime extends EventEmitter {
 	 * Set breakpoint in file with given line.
 	 */
 	public setBreakPoint(path: string, line: number): IMockBreakpoint {
-		if (!this.isProgramLoaded) {
-			this.loadProgram();
-			this.isProgramLoaded = true;
-		}
+		// if (!this.isProgramLoaded) {
+		// 	this.loadProgram();
+		// 	this.isProgramLoaded = true;
+		// }
 		const bp: IMockBreakpoint = { verified: false, line, id: this._breakpointId++ };
 		let bps = this._breakPoints.get(path);
 		if (!bps) {
@@ -392,27 +399,7 @@ export class MockRuntime extends EventEmitter {
 
 		return bp;
 	}
-	private loadProgram() {
-		//let path = program.replace(/source\\.*/, "bin");
 
-		//start the simulator
-		//this._messageSender.stdin.write(Buffer.from('connectiq\n'));
-
-		//navigate to project dir
-		//this._messageSender.stdin.write(Buffer.from('cd ' + path + '\n'));
-		const projectName = this._currentWorkspaceFolder.match(/.*\\(.*)/)[1];
-		const compileCmmd = 'monkeyc -d ' + this._device + ' -f "' + this._currentWorkspaceFolder + '\\monkey.jungle" -o "' + this._currentWorkspaceFolder + '\\bin\\' + projectName + '.prg" -y "' + this._pathToDevKey + '" \n';
-		this._messageSender.stdin.write(Buffer.from(compileCmmd));
-		//start the monkeyC command line debugger
-		this._messageSender.stdin.write(Buffer.from('mdd\n'));
-
-
-
-		//const compiledFiles=fs.readdirSync(this._currentWorkspaceFolder+'\\bin');
-		const loadAppCmmd = 'file "' + this._currentWorkspaceFolder + '\\bin\\' + projectName + '.prg" "' + this._currentWorkspaceFolder + '\\bin\\' + projectName + '.prg.debug.xml" ' + this._device + '" \n';
-		this._messageSender.stdin.write(Buffer.from(loadAppCmmd));
-
-	}
 	public checkIfBreakPointDeleted(breakpoints: number[] | undefined, path: string) {
 		const bps = this._breakPoints.get(path);
 		if (bps) {
@@ -614,7 +601,7 @@ export class MockRuntime extends EventEmitter {
 		this._messageSender.stdin.write(setBreakpointCommand);
 	}
 
-	public startheDebuggerAndSimulator(): void {
+	public launchDebugger(): void {
 		//start monkey c simulator in separate process
 		this._simulator = spawn('cmd', ['/K'], { shell: true });
 		this._simulator.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
@@ -629,7 +616,24 @@ export class MockRuntime extends EventEmitter {
 		this._messageSender.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
 		this._messageSender.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
 
+		//let path = program.replace(/source\\.*/, "bin");
 
+		//start the simulator
+		//this._messageSender.stdin.write(Buffer.from('connectiq\n'));
+
+		//navigate to project dir
+		//this._messageSender.stdin.write(Buffer.from('cd ' + path + '\n'));
+		const projectName = this._currentWorkspaceFolder.match(/.*\\(.*)/)[1];
+		const compileCmmd = 'monkeyc -d ' + this._device + ' -f "' + this._currentWorkspaceFolder + '\\monkey.jungle" -o "' + this._currentWorkspaceFolder + '\\bin\\' + projectName + '.prg" -y "' + this._sdkPath + "\\developer_key.der" + '" \n';
+		this._messageSender.stdin.write(Buffer.from(compileCmmd));
+		//start the monkeyC command line debugger
+		this._messageSender.stdin.write(Buffer.from('mdd\n'));
+
+
+
+		//const compiledFiles=fs.readdirSync(this._currentWorkspaceFolder+'\\bin');
+		const loadAppCmmd = 'file "' + this._currentWorkspaceFolder + '\\bin\\' + projectName + '.prg" "' + this._currentWorkspaceFolder + '\\bin\\' + projectName + '.prg.debug.xml" ' + this._device + '" \n';
+		this._messageSender.stdin.write(Buffer.from(loadAppCmmd));
 
 		this._messageSender.stdout.on('data', async (data) => {
 			//console.log('Debugger info: ' + data+"$$$");

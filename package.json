@@ -62,7 +62,11 @@
 		"onDebugDynamicConfigurations:mock",
 		"onCommand:extension.mock-debug.getProgramName",
 		"onCommand:extension.mock-debug.runEditorContents",
-		"onCommand:extension.mock-debug.debugEditorContents"
+		"onCommand:extension.mock-debug.debugEditorContents",
+		"onCommand:extension.mock-debug.config",
+		"onCommand:extension.mock-debug.UnitTests",
+		"onCommand:extension.mock-debug.sendMessageToWebView"
+
 	],
 	"contributes": {
 		"menus": {
@@ -99,7 +103,30 @@
 			{
 				"command": "extension.mock-debug.showAsHex",
 				"title": "Show as Hex"
-			}
+			},
+			{
+				"command": "extension.mock-debug.config",
+				"title": "Monkey C debug config"
+				
+			  },
+			  {
+				"command": "extension.mock-debug.getSdkPath",
+				"title": "Monkey C debug config"
+				
+			  },
+			  {
+				"command": "extension.mock-debug.getProjectPath",
+				"title": "Monkey C debug config"
+				
+			  },
+			  {
+				"command":"extension.mock-debug.UnitTests",
+				"title":"Run Unit Tests"
+			  },
+			  {
+				  "command":"extension.mock-debug.sendMessageToWebView",
+				  "title":"Send message to panel webview"
+			  }
 		],
 		"breakpoints": [
 			{
@@ -132,9 +159,20 @@
 								"type": "boolean",
 								"description": "Enable logging of the Debug Adapter Protocol.",
 								"default": true
+							},
+							"workspaceFolder": {
+								"type": "string",
+								"description": "Project folder",
+								"default": true
+							},
+							"sdkPath": {
+								"type": "string",
+								"description": "Connect IQ SDK path",
+								"default": true
 							}
 						}
 					}
+
 				},
 				"initialConfigurations": [
 					{
@@ -161,7 +199,8 @@
 					}
 				],
 				"variables": {
-					"AskForProgramName": "extension.mock-debug.getProgramName"
+					"AskForProgramName": "extension.mock-debug.getProgramName",
+					"test":"extension.mock-debug.test"
 				}
 			}
 		]

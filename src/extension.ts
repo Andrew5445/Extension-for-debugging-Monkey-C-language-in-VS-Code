@@ -12,6 +12,20 @@ import { join } from 'path';
 import { platform } from 'process';
 import { WorkspaceFolder, DebugConfiguration, ProviderResult, CancellationToken } from 'vscode';
 import { MockDebugSession } from './monkeycDebug';
+import { spawn } from 'child_process';
+import { glob } from 'glob';
+import { readFile, writeFile, createReadStream } from 'fs';
+var path = require('path');
+const readline = require('readline');
+
+
+interface UnitTest {
+	name: string;
+	result: string;
+	time: string;
+	assert: string;
+}
+
 
 /*
  * The compile time flag 'runMode' controls how the debug adapter is run.
@@ -20,7 +34,7 @@ import { MockDebugSession } from './monkeycDebug';
 const runMode: 'external' | 'server' | 'namedPipeServer' | 'inline' = 'inline';
 
 export function activate(context: vscode.ExtensionContext) {
-
+	let currentPanel: vscode.WebviewPanel | undefined = undefined;
 	context.subscriptions.push(
 		vscode.commands.registerCommand('extension.mock-debug.runEditorContents', (resource: vscode.Uri) => {
 			vscode.debug.startDebugging(undefined, {
@@ -44,6 +58,33 @@ export function activate(context: vscode.ExtensionContext) {
 			vscode.window.showInformationMessage(`${variable.container.name}: ${variable.variable.name}`);
 		})
 	);
+	context.subscriptions.push(vscode.commands.registerCommand(
+		'extension.mock-debug.getSdkPath',
+		() => {
+			return context.globalState.get('sdkPath');
+		}
+
+	));
+	context.subscriptions.push(vscode.commands.registerCommand(
+		'extension.mock-debug.getProjectPath',
+		() => {
+			return context.globalState.get('projectPath');
+		}
+
+	));
+	context.subscriptions.push(vscode.commands.registerCommand(
+		'extension.mock-debug.sendMessageToWebView',
+		(data) => {
+			if (!currentPanel) {
+				return;
+			}
+
+			// Send a message to our webview.
+			// You can send any JSON serializable data.
+			currentPanel.webview.postMessage(JSON.stringify(data));
+		}
+
+	));
 
 	context.subscriptions.push(vscode.commands.registerCommand('extension.mock-debug.getProgramName', config => {
 		return vscode.window.showInputBox({
@@ -120,8 +161,398 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 	*/
-}
+	context.subscriptions.push(
+		vscode.commands.registerCommand('extension.mock-debug.config', () => {
+			const panel = vscode.window.createWebviewPanel(
+				'catCoding',
+				'Cat Coding',
+				vscode.ViewColumn.One,
+				{
+					enableScripts: true
+				}
+			);
 
+			panel.webview.html = getWebviewContent();
+
+			// Handle messages from the webview
+			panel.webview.onDidReceiveMessage(
+				message => {
+					switch (message.command) {
+						case 'alert':
+							context.globalState.update('sdkPath', message.text.split(' ')[0]);
+							context.globalState.update('projectPath', message.text.split(' ')[1]);
+							const launchFile: string[] = glob.sync(path.normalize(message.text.split(' ')[1]) + '/**/.vscode/launch.json');
+							//update launch.json
+							readFile(launchFile[0], 'utf8', function readFileCallback(err, data) {
+								if (err) {
+									console.log(err);
+								} else {
+									let obj = JSON.parse(data);
+									obj.configurations[0].sdkPath_ = message.text.split(' ')[0];
+									obj.configurations[0].projectPath_ = message.text.split(' ')[0];
+									// obj.table.push({id: 2, square:3}); //add some data
+									let json = JSON.stringify(obj); //convert it back to json
+									writeFile(launchFile[0], json, 'utf8', () => { }); // write it back 
+								}
+							});
+							vscode.commands.executeCommand('extension.mock-debug.getSdkPath', message.text);
+					}
+				},
+				undefined,
+				context.subscriptions
+			);
+
+		})
+	);
+
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('extension.mock-debug.UnitTests', () => {
+			currentPanel = vscode.window.createWebviewPanel(
+				'catCoding',
+				'Cat Coding',
+				vscode.ViewColumn.One,
+				{
+					enableScripts: true
+				}
+			);
+
+			currentPanel.webview.html = getUnitTestsWebviewContent();
+
+			// Handle messages from the webview
+			currentPanel.webview.onDidReceiveMessage(
+				async message => {
+					let sdkPath;
+					let projectPath;
+					if (await vscode.commands.executeCommand('extension.mock-debug.getSdkPath') === undefined || await vscode.commands.executeCommand('extension.mock-debug.getProjectPath') === undefined) {
+						vscode.commands.executeCommand('extension.mock-debug.config');
+						sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
+						projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+					}
+					else {
+						sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
+						projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+					}
+					if (message.command === 'run-test-again') {
+						let buffer;
+						const cmd = spawn('cmd', ['/K'], { shell: true });
+						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
+						cmd.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
+						cmd.stdin.write(Buffer.from('monkeyc -d d2bravo -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "c:\\Users\\ondre\\Desktop\\GARMIN SDK\\developer_key.der" -t\n'));
+						cmd.stdin.write(Buffer.from('connectiq\n'));
+						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t ' + message.text + '\n'));
+						cmd.stdin.write(Buffer.from('###\n'));
+						cmd.stdout.on('data', async (data) => {
+							const tests: UnitTest[] = [];
+							const data_ = data.toString();
+							console.log(data_);
+
+							buffer += data;
+							if (buffer.includes('###')) {
+
+								if (buffer.includes('Executing test')) {
+									const info: string[] = buffer.match(/Executing test\s(.*)...\nDEBUG\s[(](.*)[)].*\n(.*)/g);
+									info.forEach(element => {
+										if (element.trim().startsWith('Executing test')) {
+											const unitTestInfo = element.match(/Executing test\s(.*)...\nDEBUG\s[(](.*)[)]:\s(.*)\n(.*)/);
+
+
+											if (unitTestInfo) {
+												const unitTest = {
+													name: unitTestInfo[1],
+													result: unitTestInfo[4],
+													time: unitTestInfo[2],
+													assert: unitTestInfo[3]
+												} as UnitTest;
+												tests.push(unitTest);
+											}
+
+										}
+									});
+									glob(projectPath + '/source/**/*.mc', {}, (err, files) => {
+
+										files.forEach(async element => {
+
+											const fileStream = createReadStream(element);
+
+											const rl = readline.createInterface({
+												input: fileStream,
+												crlfDelay: Infinity
+											});
+
+											let lineCount = 0;
+											for await (const line of rl) {
+												lineCount++;
+												tests.forEach(unitTest => {
+													const unitTestName = unitTest.name.split('.');
+													let nameWithoutClass = "";
+
+													if (unitTestName.length > 1) {
+														nameWithoutClass = unitTestName[1];
+													}
+													else {
+														nameWithoutClass = unitTestName[0];
+													}
+													if (line.includes(nameWithoutClass)) {
+														const additionalInfoObj = {
+															additionalInfo: {
+																name: unitTest.name,
+																file: rl.input.path,
+																line: lineCount
+															}
+
+														};
+														vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', additionalInfoObj);
+													}
+												});
+
+											}
+
+										});
+										console.log(files);
+									});
+									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', tests);
+									//console.log(data_);
+									cmd.kill();
+									buffer = '';
+								}
+								else {
+									console.log('No unit tests found.');
+								}
+							}
+
+
+
+
+						});
+
+
+					}
+					if (message.command === 'run-tests') {
+						let buffer;
+						const cmd = spawn('cmd', ['/K'], { shell: true });
+						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
+						cmd.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
+						cmd.stdin.write(Buffer.from('monkeyc -d d2bravo -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "c:\\Users\\ondre\\Desktop\\GARMIN SDK\\developer_key.der" -t\n'));
+						cmd.stdin.write(Buffer.from('connectiq\n'));
+						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t\n'));
+						//cmd.stdin.write(Buffer.from('"C:\\Users\\ondre\\Desktop\\GARMIN%SDK\\connectiq-sdk-win-3.1.9-2020-06-24-1cc9d3a70\\bin\\monkeydo.bat" "C:\\Users\\ondre\\Desktop\\debuggerExtensionStart\\WATCHFACE\\bin\\WATCHFACE.prg" d2bravo /t\n'));
+						cmd.stdin.write(Buffer.from('###\n'));
+						//cmd.stdin.write(Buffer.from('simulator & [1] 27984\n'));
+						cmd.stdout.on('data', async (data) => {
+							const tests: UnitTest[] = [];
+							const data_ = data.toString();
+							buffer += data;
+							if (buffer.includes('###')) {
+
+								if (buffer.includes('Executing test')) {
+									const info: string[] = buffer.match(/Executing test\s(.*)...\nDEBUG\s[(](.*)[)].*\n(.*)/g);
+									info.forEach(element => {
+										if (element.trim().startsWith('Executing test')) {
+											const unitTestInfo = element.match(/Executing test\s(.*)...\nDEBUG\s[(](.*)[)]:\s(.*)\n(.*)/);
+
+
+											if (unitTestInfo) {
+												const unitTest = {
+													name: unitTestInfo[1],
+													result: unitTestInfo[4],
+													time: unitTestInfo[2],
+													assert: unitTestInfo[3]
+												} as UnitTest;
+												tests.push(unitTest);
+											}
+
+										}
+									});
+
+									//search for additional unit test info
+									glob(projectPath + '/source/**/*.mc', {}, (err, files) => {
+
+										files.forEach(async element => {
+
+											const fileStream = createReadStream(element);
+
+											const rl = readline.createInterface({
+												input: fileStream,
+												crlfDelay: Infinity
+											});
+
+											let lineCount = 0;
+											for await (const line of rl) {
+												lineCount++;
+												tests.forEach(unitTest => {
+													const unitTestName = unitTest.name.split('.');
+													let nameWithoutClass = "";
+
+													if (unitTestName.length > 1) {
+														nameWithoutClass = unitTestName[1];
+													}
+													else {
+														nameWithoutClass = unitTestName[0];
+													}
+													if (line.includes(nameWithoutClass)) {
+														const additionalInfoObj = {
+															additionalInfo: {
+																name: unitTest.name,
+																file: rl.input.path,
+																line: lineCount
+															}
+
+														};
+														vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', additionalInfoObj);
+													}
+												});
+
+											}
+
+										});
+										console.log(files);
+									});
+
+									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', tests);
+									//console.log(data_);
+									cmd.kill();
+									buffer = '';
+								}
+								else {
+									console.log('No unit tests found.');
+								}
+							}
+
+
+
+
+						});
+
+
+
+					}
+				},
+				undefined,
+				context.subscriptions
+			);
+			currentPanel.onDidDispose(
+				() => {
+					currentPanel = undefined;
+				},
+				undefined,
+				context.subscriptions
+			);
+		})
+	);
+}
+function getWebviewContent() {
+	return `<!DOCTYPE html>
+  <html lang="en">
+  <head>
+	  <meta charset="UTF-8">
+	  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	  <title>Cat Coding</title>
+  </head>
+  <body>
+	  <h1>SDK path</h1>
+	  <input type="text" id="sdkPath" name="sdkPath">
+	  <h1>Project path</h1>
+	  <input type="text" id="projectPath" name="projectPath">
+	  <br>
+	  <input style="display:block" type="submit" id="saveBttn" value="Save">
+	  <script>
+		  (function() {
+			  const vscode = acquireVsCodeApi();
+			  const counter = document.getElementById('sdkPath');
+			  document.getElementById('saveBttn').addEventListener('click',()=>{
+				vscode.postMessage({
+					command: 'alert',
+					text: document.getElementById('sdkPath').value+" "+document.getElementById('projectPath').value
+				})
+			  });
+			  let count = 0;
+			  
+			 
+		  }())
+	  </script>
+  </body>
+  </html>`;
+}
+function getUnitTestsWebviewContent() {
+	return `<!DOCTYPE html>
+  <html lang="en">
+  <head>
+	  <meta charset="UTF-8">
+	  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	  <title>Cat Coding</title>
+  </head>
+  <body>
+	  
+	  <input type="button" id="runTestsBttn" name="runTestsBttn" value="Run unit tests">
+	  
+	  <br>
+	  <br>
+	  
+	  <table id="unitTests" style="width:100%">
+	  <thead>
+	  <tr>
+	  <th>Name</th>
+	  <th>Result</th>
+	  <th>Assert</th>
+	  <th>Time of execution</th>
+	  <th>Location</th>
+	  <th></th>
+	</tr>
+  </thead>
+  <tbody>
+  
+  </tbody>
+</table>
+	  <script>
+			  const vscode = acquireVsCodeApi();
+			  document.getElementById('runTestsBttn').addEventListener('click',()=>{
+				vscode.postMessage({
+					command: 'run-tests',
+					text: 'run tests'
+				})
+			  });
+			  
+			  document.addEventListener('click',function(e){
+				if(e.target && e.target.className==='runAgain'){
+					
+					  vscode.postMessage({
+									command: 'run-test-again',
+									text: e.target.id.split('-')[0]
+								})
+				 }
+			 });
+
+				 
+			  
+		  
+		  window.addEventListener('message', event => {
+			const div=document.getElementById('unitTests').getElementsByTagName('tbody')[0];
+            const message = event.data; // The JSON data our extension sent
+			const data=JSON.parse(message);
+			if (data.additionalInfo!== undefined){
+				document.getElementById(data.additionalInfo.name).getElementsByClassName('Location')[0].innerHTML=data.additionalInfo.file+':'+data.additionalInfo.line.toString();
+			}
+			data.forEach((x)=>{
+				const tableRow=document.getElementById(x.name);
+				if (tableRow!==undefined && tableRow!==null){
+					tableRow.innerHTML='<td style="text-align: center;">'+x.name+'</td> <td style="text-align: center;">'+x.result+'</td><td style="text-align: center;">'+x.assert+'</td> <td style="text-align: center;">'+x.time+'</td><td class="Location" style="text-align: center;"></td> <td style="text-align: center;"><input type="button" class="runAgain" id='+x.name+'-RunAgainBttn name="runAgain" value="Run again"></td>';
+				}
+				else{
+					div.innerHTML+='<tr id='+x.name+'><td style="text-align: center;">'+x.name+'</td> <td style="text-align: center;">'+x.result+'</td><td style="text-align: center;">'+x.assert+'</td> <td style="text-align: center;">'+x.time+'</td><td class="Location" style="text-align: center;"></td> <td style="text-align: center;"><input type="button" class="runAgain" id='+x.name+'-RunAgainBttn name="runAgain" value="Run again"></td></tr>';
+				}	
+						
+					
+				
+				
+				
+			});
+            
+        });
+	  </script>
+  </body>
+  </html>`;
+}
 
 
 export function deactivate() {
@@ -146,6 +577,7 @@ class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
 				config.program = '${file}';
 				config.workspaceFolder = '${workspaceFolder}';
 				config.stopOnEntry = true;
+				config.test = '${command:extension.mock-debug.config}';
 			}
 		}
 
@@ -157,6 +589,9 @@ class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
 
 		return config;
 	}
+	// resolveDebugConfigurationWithSubstitutedVariables(folder: WorkspaceFolder, debugConfiguration: DebugConfiguration, token: CancellationToken): ProviderResult<DebugConfiguration> {
+	// 	return null;
+	// }
 }
 
 class DebugAdapterExecutableFactory implements vscode.DebugAdapterDescriptorFactory {
@@ -169,7 +604,7 @@ class DebugAdapterExecutableFactory implements vscode.DebugAdapterDescriptorFact
 
 		// use the executable specified in the package.json if it exists or determine it based on some other information (e.g. the session)
 		if (!executable) {
-			const command = "absolute path to my DA executable";
+			const command = "./out/debugAdapter.js";
 			const args = [
 				"some args",
 				"another arg"
