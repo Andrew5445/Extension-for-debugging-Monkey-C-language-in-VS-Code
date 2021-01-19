@@ -73,6 +73,26 @@ export function activate(context: vscode.ExtensionContext) {
 
 	));
 	context.subscriptions.push(vscode.commands.registerCommand(
+		'extension.mock-debug.showErrorMessage',
+		(message) => {
+			vscode.window.showErrorMessage(message);
+			//return context.globalState.get('projectPath');
+		}
+
+	));
+
+	context.subscriptions.push(vscode.commands.registerCommand(
+		'extension.mock-debug.restartDebuggingSession',
+		() => {
+			console.log(vscode.debug.activeDebugSession);
+			 
+			//return context.globalState.get('projectPath');
+		}
+
+	));
+	
+
+	context.subscriptions.push(vscode.commands.registerCommand(
 		'extension.mock-debug.sendMessageToWebView',
 		(data) => {
 			if (!currentPanel) {
@@ -164,8 +184,8 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('extension.mock-debug.config', () => {
 			const panel = vscode.window.createWebviewPanel(
-				'catCoding',
-				'Cat Coding',
+				'debug Config',
+				'Debug Config',
 				vscode.ViewColumn.One,
 				{
 					enableScripts: true
@@ -188,8 +208,9 @@ export function activate(context: vscode.ExtensionContext) {
 									console.log(err);
 								} else {
 									let obj = JSON.parse(data);
-									obj.configurations[0].sdkPath_ = message.text.split(' ')[0];
-									obj.configurations[0].projectPath_ = message.text.split(' ')[0];
+
+									obj.configurations[0].sdkPathFromConfig = message.text.split(' ')[0];
+									obj.configurations[0].projectPathFromConfig = message.text.split(' ')[0];
 									// obj.table.push({id: 2, square:3}); //add some data
 									let json = JSON.stringify(obj); //convert it back to json
 									writeFile(launchFile[0], json, 'utf8', () => { }); // write it back 
@@ -209,8 +230,8 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('extension.mock-debug.UnitTests', () => {
 			currentPanel = vscode.window.createWebviewPanel(
-				'catCoding',
-				'Cat Coding',
+				'unit tests',
+				'Unit tests',
 				vscode.ViewColumn.One,
 				{
 					enableScripts: true
@@ -232,6 +253,21 @@ export function activate(context: vscode.ExtensionContext) {
 					else {
 						sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
 						projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+					}
+					if (message.command === 'open-file') {
+						const uri = vscode.Uri.file(message.link);
+						const pos = new vscode.Position(Number(message.line),0);
+						//const line:string=message.line;
+						vscode.window.showTextDocument(uri).then(editor => 
+							{
+								// Line added - by having a selection at the same position twice, the cursor jumps there
+								editor.selections = [new vscode.Selection(pos,pos)]; 
+						
+								// And the visible range jumps there too
+								var range = new vscode.Range(pos, pos);
+								editor.revealRange(range);
+							});
+
 					}
 					if (message.command === 'run-test-again') {
 						let buffer;
@@ -341,7 +377,7 @@ export function activate(context: vscode.ExtensionContext) {
 						//cmd.stdin.write(Buffer.from('simulator & [1] 27984\n'));
 						cmd.stdout.on('data', async (data) => {
 							const tests: UnitTest[] = [];
-							const data_ = data.toString();
+							//	const data_ = data.toString();
 							buffer += data;
 							if (buffer.includes('###')) {
 
@@ -390,7 +426,8 @@ export function activate(context: vscode.ExtensionContext) {
 													else {
 														nameWithoutClass = unitTestName[0];
 													}
-													if (line.includes(nameWithoutClass)) {
+													
+													if (line.match(/.*function\s+(.+)\s*[(].*/) && line.match(/.*function\s+(.+)\s*[(].*/)[1]===nameWithoutClass) {
 														const additionalInfoObj = {
 															additionalInfo: {
 																name: unitTest.name,
@@ -455,7 +492,7 @@ function getWebviewContent() {
 	  <h1>Project path</h1>
 	  <input type="text" id="projectPath" name="projectPath">
 	  <br>
-	  <input style="display:block" type="submit" id="saveBttn" value="Save">
+	  <input style="display:block;margin-top:20px;" type="submit" id="saveBttn" value="Save">
 	  <script>
 		  (function() {
 			  const vscode = acquireVsCodeApi();
@@ -521,6 +558,14 @@ function getUnitTestsWebviewContent() {
 									text: e.target.id.split('-')[0]
 								})
 				 }
+				 else if (e.target.className==='fileLink'){
+					const line=e.target.closest('.Location').querySelector('.line');
+					vscode.postMessage({
+						command: 'open-file',
+						link: e.target.innerHTML,
+						line: line.innerHTML
+					})
+				 }
 			 });
 
 				 
@@ -531,7 +576,7 @@ function getUnitTestsWebviewContent() {
             const message = event.data; // The JSON data our extension sent
 			const data=JSON.parse(message);
 			if (data.additionalInfo!== undefined){
-				document.getElementById(data.additionalInfo.name).getElementsByClassName('Location')[0].innerHTML=data.additionalInfo.file+':'+data.additionalInfo.line.toString();
+				document.getElementById(data.additionalInfo.name).getElementsByClassName('Location')[0].innerHTML='<a class="fileLink" style="cursor: pointer;text-decoration: underline;">'+data.additionalInfo.file+'</a>:'+'<span class="line">'+data.additionalInfo.line.toString()+'</span>';
 			}
 			data.forEach((x)=>{
 				const tableRow=document.getElementById(x.name);
