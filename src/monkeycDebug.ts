@@ -14,7 +14,9 @@ import { basename } from 'path';
 import { MockRuntime, IMockBreakpoint, IMockVariable } from './monkeycRuntime';
 import { Subject } from 'await-notify';
 import * as vscode from 'vscode';
-// import * as vscode from 'vscode';
+import { glob } from 'glob';
+import { parseStringPromise } from 'xml2js';
+import { promises as fs, promises } from 'fs';
 
 // function timeout(ms: number) {
 // 	return new Promise(resolve => setTimeout(resolve, ms));
@@ -31,7 +33,9 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	/** An absolute path to the "program" to debug. */
 	program: string;
 	sdkPath: string;
+	sdkPathFromConfig: string;
 	projectPath: string;
+	projectPathFromConfig: string;
 	/** Automatically stop target after launch. If not specified, target does not stop. */
 	stopOnEntry?: boolean;
 	/** enable logging the Debug Adapter Protocol */
@@ -201,9 +205,18 @@ export class MockDebugSession extends LoggingDebugSession {
 
 	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
 
-		// make sure to 'Stop' the buffered logging if 'trace' is not set
-		logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
-		this._launchDone = await this._runtime.start(args.program, args.sdkPath, args.projectPath, !args.stopOnEntry, !!args.noDebug, this._launchDone, this._configurationDone);
+		//show select device quick pick
+		const device = await vscode.window.showQuickPick(await this.getAvailableDevices(args.projectPath), { placeHolder: "Select Garmin device" });
+
+		if (device) {
+			this._launchDone = await this._runtime.start(args.program, args.sdkPathFromConfig?args.projectPath:args.sdkPathFromConfig, args.projectPathFromConfig?args.projectPath:args.projectPathFromConfig, !args.stopOnEntry, !!args.noDebug, device!, this._launchDone, this._configurationDone);
+			logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
+		}
+		else {
+			response.success = false;
+			vscode.window.showErrorMessage('Device needs to be selected!');
+		}
+
 		this.sendResponse(response);
 	}
 
@@ -237,7 +250,8 @@ export class MockDebugSession extends LoggingDebugSession {
 
 
 		this.sendResponse(response);
-		console.log("Breakpoint request finished!!!");
+
+		//continueFn();
 	}
 
 	protected breakpointLocationsRequest(response: DebugProtocol.BreakpointLocationsResponse, args: DebugProtocol.BreakpointLocationsArguments, request?: DebugProtocol.Request): void {
@@ -296,8 +310,8 @@ export class MockDebugSession extends LoggingDebugSession {
 
 		response.body = {
 			scopes: [
-				new Scope("Local", this._variableHandles.create("local"), false),
-				new Scope("Self", this._variableHandles.create("self"), true)
+				new Scope("Local", this._variableHandles.create("local"), true),
+				new Scope("Args", this._variableHandles.create("args"), true)
 			]
 		};
 		this.sendResponse(response);
@@ -311,11 +325,11 @@ export class MockDebugSession extends LoggingDebugSession {
 		if (this._variableHandles.get(args.variablesReference) === 'local') {
 			actualVariables = await this._runtime.getLocalVariables(this._variableHandles);
 		}
-		// else if (this._variableHandles.get(args.variablesReference) === 'global') {
-		// 	actualVariables = await this._runtime.evaluateExpression('self',this._variableHandles);
-		// }
+		else if (this._variableHandles.get(args.variablesReference) === 'args') {
+			actualVariables = await this._runtime.getArgsVariables(this._variableHandles);
+		}
 		else {
-			actualVariables = await this._runtime.getChildVariables(args.variablesReference, 0, this._runtime.localVariables);
+			actualVariables = await this._runtime.getChildVariables(args.variablesReference, 0, this._runtime.localVariables.concat(this._runtime.argsVariables));
 		}
 		actualVariables.forEach((variable) => {
 			variables.push({ name: variable.name, value: variable.value!, variablesReference: variable.variablesReference, type: variable.type });
@@ -569,5 +583,34 @@ export class MockDebugSession extends LoggingDebugSession {
 
 	private createSource(filePath: string): Source {
 		return new Source(basename(filePath), this.convertDebuggerPathToClient(filePath), undefined, undefined, 'mock-adapter-data');
+	}
+
+
+	private async getAvailableDevices(projectFolder: string) {
+		let deviceList = [];
+		const manifestFile = glob.sync(projectFolder + '/**/manifest.xml');
+		if (manifestFile.length > 0) {
+			try {
+				const content = await fs.readFile(manifestFile[0]);
+				try {
+					const res = await parseStringPromise(content);
+					const devices = res["iq:manifest"]["iq:application"][0]["iq:products"][0]["iq:product"];
+					if (devices) {
+						return devices.map(x => x.$.id);
+
+					}
+				} catch (err) {
+					console.log(`Error occurred during parsing of manifest file contents: ${err}`);
+				}
+
+			} catch (err) {
+				console.log(`Error occured during reading of manifest file: ${err}`);
+			}
+
+
+
+		}
+		console.log();
+
 	}
 }

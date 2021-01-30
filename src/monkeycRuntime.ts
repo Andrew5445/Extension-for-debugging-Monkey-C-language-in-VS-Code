@@ -7,7 +7,8 @@ import { EventEmitter } from 'events';
 import { spawn } from 'child_process';
 import { DebuggerMiddleware } from './debuggerMiddleware';
 import { glob } from 'glob';
-var path = require('path');
+import * as path from 'path';
+import { match } from 'assert';
 
 export interface IMockBreakpoint {
 	id: number;
@@ -25,7 +26,6 @@ export interface IMockVariable {
 	value?: string;
 	type?: string;
 	variablesReference: number;
-	parent?: IMockVariable;
 	children: IMockVariable[];
 }
 
@@ -42,24 +42,23 @@ interface IStack {
 	frames: IStackFrame[];
 }
 
-/**
- * A Mock runtime with minimal debugger functionality.
- */
 export class MockRuntime extends EventEmitter {
-	private _currentWorkspaceFolder;
+	private _currentProjectFolder;
+
 	private _sdkPath;
-	// the initial (and one and only) file we are 'debugging'
+
 	private _sourceFiles = new Map<string, string[]>();
 	public get sourceFiles() {
 		return this._sourceFiles;
 	}
 	private _currentFile;
-	// the contents (= lines) of the one and only file
+
 	private _sourceLines: string[] = [];
 
-	private _device = 'd2deltas';
-	// This is the next line that will be 'executed'
+	private _device;
+
 	private _currentLine = 0;
+
 	private _currentColumn: number | undefined;
 
 	private _localVariables: IMockVariable[] = [];
@@ -67,32 +66,32 @@ export class MockRuntime extends EventEmitter {
 		return this._localVariables;
 	}
 
-	private _globalVariables: IMockVariable[] = [];
-	public get globalVariables() {
-		return this._globalVariables;
+	private _argsVariables: IMockVariable[] = [];
+	public get argsVariables() {
+		return this._argsVariables;
 	}
 
 	//private testBuffer;
 	// maps from sourceFile to array of Mock breakpoints
 	private _breakPoints = new Map<string, IMockBreakpoint[]>();
+
 	private buffer;
-	// since we want to send breakpoint events, we will assign an id to every event
-	// so that the frontend can match events with breakpoints.
+
+	private testMap = new Map<IStack, IMockBreakpoint>();
 	private _breakpointId = 1;
 
 	private _breakAddresses = new Set<string>();
 
 	private debuggerMiddleware = new DebuggerMiddleware();
+
 	private _noDebug = false;
+
 	private isStarted = false;
 
 	private _debuggerStarted = false;
-	//private isProgramLoaded = false;
-	//child process which will send commands to the monkeyC debugger
-	private _messageSender;
-	//private _simulator;
 
-	//private _launchDone: boolean = false;
+	private _messageSender;
+
 
 	constructor() {
 		super();
@@ -100,22 +99,23 @@ export class MockRuntime extends EventEmitter {
 
 
 	public setCurrentWorkspaceFolder(path: string) {
-		this._currentWorkspaceFolder = path;
+		this._currentProjectFolder = path;
 	}
 	/**
 	 * Start executing the given program.
 	 */
-	public async start(program: string, sdkPath: string, workspaceFolder: string, stopOnEntry: boolean, noDebug: boolean, launchDone, configurationDone) {
+	public async start(program: string, sdkPath: string, workspaceFolder: string, stopOnEntry: boolean, noDebug: boolean, device: string, launchDone, configurationDone) {
 
+		this._device = device;
 
 		this._noDebug = noDebug;
 
 		this.loadSource(program);
-
-
-		this._currentWorkspaceFolder = workspaceFolder;
+		this.testMap.set({count:0,frames:[]},{line:7,id:1,verified:true});
+		this.testMap.set({count:1,frames:[]},{line:7,id:1,verified:true});
+		this._currentProjectFolder = workspaceFolder;
 		this._sdkPath = sdkPath;
-		const files = glob.sync(this._currentWorkspaceFolder + '/**/*.mc');
+		const files = glob.sync(this._currentProjectFolder + '/**/*.mc');
 		files.forEach(element => {
 			const path_ = path.normalize(element).charAt(0).toLowerCase() + path.normalize(element).slice(1);
 			if (!this.sourceFiles.get(path_)) {
@@ -269,6 +269,7 @@ export class MockRuntime extends EventEmitter {
 
 
 	public async getLocalVariables(variableHandles): Promise<IMockVariable[]> {
+		this._localVariables = [];
 		this._messageSender.stdin.write(Buffer.from('info frame\n'));
 
 		const output: string = await new Promise((resolve) => {
@@ -277,9 +278,83 @@ export class MockRuntime extends EventEmitter {
 		});
 
 
-		if (!output.includes("Locals:") || !output.includes("No app is suspended.") || !output.includes('No locals.')) {
+		if (!output.includes("No app is suspended.") && !output.includes('No locals.')) {
 
 			const parsedOutput = output.match(/Locals:(.*)/s);
+			if (parsedOutput) {
+				const lines = parsedOutput[1].split('\r\n');
+				await Promise.all(lines.map(async (line) => {
+					if (line !== "") {
+
+						const variableInfo = line.trim().match(/(.*) = (.*)/);
+						if (variableInfo) {
+							if (variableInfo[2] === 'null') {
+								this._localVariables.push({ name: variableInfo[1], value: variableInfo[2], type: 'undefined', variablesReference: 0, children: [] });
+							}
+							else {
+								// if (!variableInfo[2].split(' ')[1].includes('Object') && !variableInfo[2].split(' ')[1].includes('Circle') && !variableInfo[2].split(' ')[1].includes('Lang.Array')) {
+								// 	this._localVariables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), variablesReference: 0, children: [] });
+								// }
+								// else {
+
+								this._messageSender.stdin.write(Buffer.from('print ' + variableInfo[1] + ' \n'));
+								const output: string = await new Promise((resolve) => {
+									this.debuggerMiddleware.waitForData(resolve, 'childVariablesInfo_' + variableInfo[1]);
+
+								});
+
+
+								//check for nested structure
+								if (output.split('\n').length > 1 && !variableInfo[2].split(' ')[1].includes('Lang.String')) {
+									let indentation = 2;
+
+									if (variableInfo[2].split(' ')[1].includes('Lang.Array') || variableInfo[2].split(' ')[1].includes('Lang.Dictionary')) {
+										indentation = 4;
+										this.index = 2;
+									}
+
+									//const indentation=variableInfo[2].split(' ')[1].includes('Lang.Array')?4:2;
+									const variable: IMockVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
+									this.parseChildVariables(output.split('\n'), indentation, variable.children, variableHandles);
+									this._localVariables.push(variable);
+									this.index = 0;
+								}
+								else {
+									this._localVariables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), variablesReference: 0, children: [] });
+								}
+
+
+
+							}
+						}
+					}
+
+				}));
+
+				//this._localVariables=_localVariables;
+
+				return this._localVariables;
+
+
+			}
+
+		}
+
+		return [];
+	}
+
+	public async getArgsVariables(variableHandles): Promise<IMockVariable[]> {
+		this._messageSender.stdin.write(Buffer.from('info frame\n'));
+
+		const output: string = await new Promise((resolve) => {
+			this.debuggerMiddleware.waitForData(resolve, "variablesInfo");
+
+		});
+
+
+		if (!output.includes("No app is suspended.")) {
+
+			const parsedOutput = output.match(/Args:(.*) (Locals:|No locals\.)/s);
 			if (parsedOutput) {
 				const lines = parsedOutput[1].split('\r\n');
 				await Promise.all(lines.map(async (line) => {
@@ -344,78 +419,134 @@ export class MockRuntime extends EventEmitter {
 
 	private index = 0;
 
+	private _isKeyValuePair = false;
 
 	private parseChildVariables(lines: string[], indentation, variables: IMockVariable[], variableHandles) {
 
+		//only for testing
+
 		this.index++;
+		if (lines[this.index] === '      connectionInfo =') {
+			console.log();
+
+		}
 
 		if (this.index < lines.length) {
 
 			//skip array parentheses
-			if (/^\[$/.test(lines[this.index].trim()) || /^\][,]$/.test(lines[this.index].trim())) {
+			if (/^\[$/.test(lines[this.index].trim()) || /^\][,]$/.test(lines[this.index].trim()) || /^\]$/.test(lines[this.index].trim()) || /^[,]$/.test(lines[this.index].trim()) || lines[this.index].trim().length === 1) {
 				this.index++;
 			}
+			if (this.index >= lines.length) {
+				return;
+			}
+			if (lines[this.index].trim() === '=>') {
+				this._isKeyValuePair = true;
+				this.index++;
+			}
+			//handle dictionary entries
+
 
 			let currentIndentation;
-			const info = lines[this.index].split(' ');
+			//const info = lines[this.index].split(' ');
 			const varInfo = lines[this.index].trim().split(' ');
 
 			//get indentation
-			if (varInfo.length === 2) {
 
-				currentIndentation = info.length - 2;
-			}
-			else {
-				currentIndentation = info.length - 4;
-
-			}
+			currentIndentation = lines[this.index].match(/(\s+).*/)![1].length;
 
 
 			if (currentIndentation === indentation) {
 
 
-				//structure object
+				//structured object
 				if (varInfo.length === 2) {
+					let variable: IMockVariable;
+					let indentation: number = 0;
+					let varTypeAndReference;
+					//var name case
+					if (/.*\s+[=]/.test(lines[this.index].trim())) {
 
-					const variable: IMockVariable = { name: varInfo[0], children: [], variablesReference: 0 };
-					this.index++;
+						variable = { name: varInfo[0], children: [], variablesReference: 0 };
+						this.index++;
+						varTypeAndReference = lines[this.index].trim().split(' ');
+						variable.type = varTypeAndReference[1].replace(/[/)]|[/(]/g, '');
 
-					const varTypeAndMemoryAddress = lines[this.index].trim().split(' ');
-					variable.type = varTypeAndMemoryAddress[1].replace(/[/)]|[/(]/g, '');
+					}
+
+					//var in dict
+					// else {
+					// 	variable = {name:"dict_entry",type: varInfo[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: 0 };
+					// }
+
 
 					//handle string var
-					if (variable.type === 'Lang.String') {
-						this.index += 2;
-						variable.value = lines[this.index].trim();
-					}
-					else if (variable.type === 'Lang.Array') {
-						variable.name = variable.name.replace(/[[]|\]/g, '');
-						variable.value = varTypeAndMemoryAddress[0];
-						variable.variablesReference = variableHandles.create(varTypeAndMemoryAddress[0]);
-						this.index += 2;
+
+					switch (variable.type) {
+						case 'Lang.String':
+							variable.name = variable.name.replace(/[[]|\]/g, '');
+							//variable.variablesReference = variableHandles.create(varTypeAndMemoryAddress[0]);
+							this.index += 2;
+							//variable.children.push({ name: lines[this.index].trim().split(' ')[0], value: lines[this.index].trim().split(' ')[2], variablesReference: 0, children: [], type: undefined });
+							//this.index += 1;
+							variable.value = lines[this.index].trim().replace(/[,]/g, '');
+
+
+							break;
+						case 'Lang.Array':
+							//currentIndentation=lines[this.index].split(' ').length-2;
+							variable.name = variable.name.replace(/[[]|\]/g, '');
+							variable.value = varTypeAndReference[0];
+							variable.variablesReference = variableHandles.create(varTypeAndReference[0]);
+							this.index += 2;
+
+
+							//next indentation level
+							indentation = lines[this.index + 1].match(/(\s+).*/)![1].length;
+							break;
+
+
+						case 'Lang.Dictionary':
+							variable.variablesReference = variableHandles.create(varTypeAndReference[0]);
+							variable.value = varTypeAndReference[0];
+							console.log();
+
+							this.index += 2;
+
+
+							break;
+						default:
+							variable.name = variable.name.replace(/[[]|\]/g, '');
+							variable.value = varTypeAndReference[0];
+							variable.variablesReference = variableHandles.create(varTypeAndReference[0]);
+
+							//next indentation level
+							indentation = lines[this.index + 1].match(/(\s+).*/)![1].length;
+
+							break;
+
 
 					}
-					else {
-						variable.value = lines[this.index].trim().split(' ')[0];
-						variable.variablesReference = variableHandles.create(varInfo[0]);
-					}
+
+					//lines[this.index + 1]
 
 
-
-
-
-
-					this.parseChildVariables(lines, currentIndentation + 4, variable.children, variableHandles);
+					this.parseChildVariables(lines, indentation, variable.children, variableHandles);
 					variables.push(variable);
+					if (this._isKeyValuePair && variables.filter(x=>x.name==='dict_entry').length>1) {
+						console.log();
+
+					}
+
 					this.index--;
 					this.parseChildVariables(lines, currentIndentation, variables, variableHandles);
 				}
 				else {
-					if (varInfo[2] === 'null') {
-						variables.push({ name: varInfo[0], value: varInfo[2], type: 'undefined', variablesReference: 0, children: [] });
+					if (/^null,?$/.test(varInfo[2])) {
+						variables.push({ name: /[[][0-9]+]/.test(varInfo[0]) ? varInfo[0].replace(/[[]|\]/g, '') : varInfo[0], value: varInfo[2]?.replace(/[,]/g, ''), type: 'undefined', variablesReference: 0, children: [] });
 					}
 					else {
-						variables.push({ name: /[[][0-9]+]/.test(varInfo[0]) ? varInfo[0].replace(/[[]|\]/g, '') : varInfo[0], value: varInfo[2], type: varInfo[3].replace(/([/)]|[/(])|[,]/g, ''), variablesReference: 0, children: [] });
+						variables.push({ name: /[[][0-9]+]/.test(varInfo[0]) ? varInfo[0].replace(/[[]|\]/g, '') : varInfo[0], value: varInfo[2], type: varInfo[3]?.replace(/([/)]|[/(])|[,]/g, ''), variablesReference: 0, children: [] });
 					}
 
 					this.parseChildVariables(lines, currentIndentation, variables, variableHandles);
@@ -441,13 +572,13 @@ export class MockRuntime extends EventEmitter {
 		return this.childrenVariables;
 	}
 
-	private result:IMockVariable|null=null;
+	private result: IMockVariable | null = null;
 
 	public evaluate(expression, index, variables: IMockVariable[]): IMockVariable | null {
 		if (index < variables.length) {
 			const currentVariable = variables[index];
 			if (currentVariable.name === expression) {
-				this.result=currentVariable;
+				this.result = currentVariable;
 				//this.childrenVariables = currentVariable.children;
 			} else if (currentVariable.children.length > 0) {
 				this.evaluate(expression, 0, currentVariable.children);
@@ -785,8 +916,8 @@ export class MockRuntime extends EventEmitter {
 		}
 
 
-		let programFile = path.split("\\")[7];
-		let setBreakpointCommand = 'break ' + programFile + ':' + (ln + 1).toString() + '\n';
+		//let programFile = path.split("\\")[7];
+		let setBreakpointCommand = 'break ' + path + ':' + (ln + 1).toString() + '\n';
 		this._messageSender.stdin.write(setBreakpointCommand);
 		console.log(setBreakpointCommand);
 
@@ -804,15 +935,15 @@ export class MockRuntime extends EventEmitter {
 		this._messageSender.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
 		this._messageSender.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
 
-		const projectName = this._currentWorkspaceFolder.match(/.*\\(.*)/)[1];
-		const compileCmmd = 'monkeyc -d ' + this._device + ' -f "' + this._currentWorkspaceFolder + '\\monkey.jungle" -o "' + this._currentWorkspaceFolder + '\\bin\\' + projectName + '.prg" -y "' + this._sdkPath + "\\developer_key.der" + '" \n';
+		const projectName = this._currentProjectFolder.match(/.*\\(.*)/)[1];
+		const compileCmmd = 'monkeyc -d ' + this._device + ' -f "' + this._currentProjectFolder + '\\monkey.jungle" -o "' + this._currentProjectFolder + '\\bin\\' + projectName + '.prg" -y "' + this._sdkPath + "\\developer_key.der" + '" \n';
 		this._messageSender.stdin.write(Buffer.from(compileCmmd));
 		this._messageSender.stdin.write(Buffer.from('connectiq\n'));
 
 		//start the monkeyC command line debugger
 		this._messageSender.stdin.write(Buffer.from('mdd\n'));
 
-		const loadAppCmmd = 'file "' + this._currentWorkspaceFolder + '\\bin\\' + projectName + '.prg" "' + this._currentWorkspaceFolder + '\\bin\\' + projectName + '.prg.debug.xml" ' + this._device + ' \n';
+		const loadAppCmmd = 'file "' + this._currentProjectFolder + '\\bin\\' + projectName + '.prg" "' + this._currentProjectFolder + '\\bin\\' + projectName + '.prg.debug.xml" ' + this._device + ' \n';
 		this._messageSender.stdin.write(Buffer.from(loadAppCmmd));
 
 		this._messageSender.stdin.write(Buffer.from('set print max-depth 100 \n'));
@@ -824,6 +955,9 @@ export class MockRuntime extends EventEmitter {
 
 		this._messageSender.stdout.on('data', async (data) => {
 			if (data.toString().includes('Pausing execution')) {
+
+
+
 				this.sendEvent('stopOnPause');
 			}
 

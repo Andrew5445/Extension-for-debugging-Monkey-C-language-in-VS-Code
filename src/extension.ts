@@ -85,12 +85,12 @@ export function activate(context: vscode.ExtensionContext) {
 		'extension.mock-debug.restartDebuggingSession',
 		() => {
 			console.log(vscode.debug.activeDebugSession);
-			 
+
 			//return context.globalState.get('projectPath');
 		}
 
 	));
-	
+
 
 	context.subscriptions.push(vscode.commands.registerCommand(
 		'extension.mock-debug.sendMessageToWebView',
@@ -105,6 +105,16 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 	));
+
+	context.subscriptions.push(vscode.commands.registerCommand(
+		'extension.mock-debug.selectDevice',
+		(projectFolder) => {
+			vscode.window.showQuickPick(["test1", "test2", "test3"]);
+		}
+
+	));
+
+
 
 	context.subscriptions.push(vscode.commands.registerCommand('extension.mock-debug.getProgramName', config => {
 		return vscode.window.showInputBox({
@@ -183,7 +193,7 @@ export function activate(context: vscode.ExtensionContext) {
 	*/
 	context.subscriptions.push(
 		vscode.commands.registerCommand('extension.mock-debug.config', () => {
-			const panel = vscode.window.createWebviewPanel(
+			currentPanel = vscode.window.createWebviewPanel(
 				'debug Config',
 				'Debug Config',
 				vscode.ViewColumn.One,
@@ -192,10 +202,10 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 			);
 
-			panel.webview.html = getWebviewContent();
+			currentPanel.webview.html = getWebviewContent();
 
 			// Handle messages from the webview
-			panel.webview.onDidReceiveMessage(
+			currentPanel.webview.onDidReceiveMessage(
 				message => {
 					switch (message.command) {
 						case 'alert':
@@ -217,6 +227,15 @@ export function activate(context: vscode.ExtensionContext) {
 								}
 							});
 							vscode.commands.executeCommand('extension.mock-debug.getSdkPath', message.text);
+							break;
+						case 'openBrowseDialog':
+							vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true }).then(fileUri => {
+								if (fileUri) {
+									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', {path:fileUri[0].path,id:message.text.startsWith('sdkPath')?'sdkPath':'projectPath'});
+								}
+
+							});
+							break;
 					}
 				},
 				undefined,
@@ -256,17 +275,16 @@ export function activate(context: vscode.ExtensionContext) {
 					}
 					if (message.command === 'open-file') {
 						const uri = vscode.Uri.file(message.link);
-						const pos = new vscode.Position(Number(message.line),0);
+						const pos = new vscode.Position(Number(message.line), 0);
 						//const line:string=message.line;
-						vscode.window.showTextDocument(uri).then(editor => 
-							{
-								// Line added - by having a selection at the same position twice, the cursor jumps there
-								editor.selections = [new vscode.Selection(pos,pos)]; 
-						
-								// And the visible range jumps there too
-								var range = new vscode.Range(pos, pos);
-								editor.revealRange(range);
-							});
+						vscode.window.showTextDocument(uri).then(editor => {
+							// Line added - by having a selection at the same position twice, the cursor jumps there
+							editor.selections = [new vscode.Selection(pos, pos)];
+
+							// And the visible range jumps there too
+							var range = new vscode.Range(pos, pos);
+							editor.revealRange(range);
+						});
 
 					}
 					if (message.command === 'run-test-again') {
@@ -426,8 +444,8 @@ export function activate(context: vscode.ExtensionContext) {
 													else {
 														nameWithoutClass = unitTestName[0];
 													}
-													
-													if (line.match(/.*function\s+(.+)\s*[(].*/) && line.match(/.*function\s+(.+)\s*[(].*/)[1]===nameWithoutClass) {
+
+													if (line.match(/.*function\s+(.+)\s*[(].*/) && line.match(/.*function\s+(.+)\s*[(].*/)[1] === nameWithoutClass) {
 														const additionalInfoObj = {
 															additionalInfo: {
 																name: unitTest.name,
@@ -489,12 +507,14 @@ function getWebviewContent() {
   <body>
 	  <h1>SDK path</h1>
 	  <input type="text" id="sdkPath" name="sdkPath">
+	  <input class="browseBttn" type="button" id="sdkPathBttn" name="sdkPathBttn" value="Browse">
 	  <h1>Project path</h1>
 	  <input type="text" id="projectPath" name="projectPath">
+	  <input class="browseBttn" type="button" id="projectPathBttn" name="projectPathBttn" value="Browse">
 	  <br>
 	  <input style="display:block;margin-top:20px;" type="submit" id="saveBttn" value="Save">
 	  <script>
-		  (function() {
+		  
 			  const vscode = acquireVsCodeApi();
 			  const counter = document.getElementById('sdkPath');
 			  document.getElementById('saveBttn').addEventListener('click',()=>{
@@ -504,9 +524,25 @@ function getWebviewContent() {
 				})
 			  });
 			  let count = 0;
-			  
+			  const browseBttns=document.getElementsByClassName('browseBttn');
+			  Array.from(browseBttns).forEach((el) => {
+				el.addEventListener('click',()=>{
+					vscode.postMessage({
+						command: 'openBrowseDialog',
+						text: el.id
+					})
+				  });
+			});
+			window.addEventListener('message', event => {
+				const message = event.data;
+				const data=JSON.parse(message);
+				if (data){
+					document.getElementById(data.id).value=data.path;
+				}
+				
+			});
 			 
-		  }())
+		  
 	  </script>
   </body>
   </html>`;
@@ -517,7 +553,7 @@ function getUnitTestsWebviewContent() {
   <head>
 	  <meta charset="UTF-8">
 	  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-	  <title>Cat Coding</title>
+	  <title>Unit tests</title>
   </head>
   <body>
 	  
@@ -612,6 +648,8 @@ class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
 	 */
 	resolveDebugConfiguration(folder: WorkspaceFolder | undefined, config: DebugConfiguration, token?: CancellationToken): ProviderResult<DebugConfiguration> {
 
+
+		//config.test = '${command:SelectDevice}';
 		// if launch.json is missing or empty
 		if (!config.type && !config.request && !config.name) {
 			const editor = vscode.window.activeTextEditor;
@@ -622,7 +660,7 @@ class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
 				config.program = '${file}';
 				config.workspaceFolder = '${workspaceFolder}';
 				config.stopOnEntry = true;
-				config.test = '${command:extension.mock-debug.config}';
+				//	config.test = '${command:SelectDevice}';
 			}
 		}
 
