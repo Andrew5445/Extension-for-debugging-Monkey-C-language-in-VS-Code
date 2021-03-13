@@ -7,6 +7,8 @@ interface IWaitingFunction {
 export class DebuggerMiddleware {
     private waitingFunctions: IWaitingFunction[] = [];
 
+    private globalVariablesInfoIncoming = false;
+
     public onData(str: string) {
         console.log('\x1b[31m%s\x1b[0m%s', 'Received:', str);
 
@@ -37,7 +39,7 @@ export class DebuggerMiddleware {
 
                             break;
                         case "frameInfo":
-                            if (str.includes("Stack level")) {
+                            if (str.startsWith('#')) {
                                 waitingFunction.fn(str);
 
                                 this.removeWaitingFunction(waitingFunction);
@@ -52,6 +54,12 @@ export class DebuggerMiddleware {
                             }
 
                             break;
+                        case "globalVariablesInfo":
+                            if (this.globalVariablesInfoIncoming) {
+                                waitingFunction.fn(str);
+                                this.removeWaitingFunction(waitingFunction);
+                                this.globalVariablesInfoIncoming=false;
+                            }
                     }
 
                     if (waitingFunction.action.startsWith('childVariablesInfo') || /No symbol ".*" in current context./.test(str)) {
@@ -62,6 +70,9 @@ export class DebuggerMiddleware {
 
                             this.removeWaitingFunction(waitingFunction);
                         }
+                    }
+                    if (str.startsWith('Support facilities')) {
+                        this.globalVariablesInfoIncoming = true;
                     }
                 }
             }

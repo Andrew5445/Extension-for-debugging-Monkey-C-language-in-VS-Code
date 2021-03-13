@@ -42,6 +42,17 @@ interface IStack {
 	frames: IStackFrame[];
 }
 
+interface IError {
+	id: string;
+	description: string;
+	details: IErrorDetails;
+}
+interface IErrorDetails {
+	message: string;
+	typeName?: string;
+	stackTrace: string;
+}
+
 export class MockRuntime extends EventEmitter {
 	private _currentProjectFolder;
 
@@ -71,13 +82,15 @@ export class MockRuntime extends EventEmitter {
 		return this._argsVariables;
 	}
 
-	//private testBuffer;
-	// maps from sourceFile to array of Mock breakpoints
+	private _globalVariables: IMockVariable[] = [];
+	public get globalVariables() {
+		return this._globalVariables;
+	}
+
 	private _breakPoints = new Map<string, IMockBreakpoint[]>();
 
-	private buffer;
+	private _buffer;
 
-	private testMap = new Map<IStack, IMockBreakpoint>();
 	private _breakpointId = 1;
 
 	private _breakAddresses = new Set<string>();
@@ -86,12 +99,17 @@ export class MockRuntime extends EventEmitter {
 
 	private _noDebug = false;
 
-	private isStarted = false;
+	private _isStarted = false;
 
 	private _debuggerStarted = false;
 
 	private _messageSender;
 
+	private _errorLog;
+
+	private _isRunning;
+
+	private _timer: NodeJS.Timeout | null = null;
 
 	constructor() {
 		super();
@@ -111,8 +129,7 @@ export class MockRuntime extends EventEmitter {
 		this._noDebug = noDebug;
 
 		this.loadSource(program);
-		this.testMap.set({count:0,frames:[]},{line:7,id:1,verified:true});
-		this.testMap.set({count:1,frames:[]},{line:7,id:1,verified:true});
+
 		this._currentProjectFolder = workspaceFolder;
 		this._sdkPath = sdkPath;
 		const files = glob.sync(this._currentProjectFolder + '/**/*.mc');
@@ -152,30 +169,51 @@ export class MockRuntime extends EventEmitter {
 	 * Continue execution to the end/beginning.
 	 */
 	public async continue(reverse = false) {
-		if (!this.isStarted) {
+		if (!this._isStarted) {
 			this._messageSender.stdin.write(Buffer.from('run \n'));
-			this.isStarted = true;
+			this._isStarted = true;
 		}
 		else {
 			this._messageSender.stdin.write(Buffer.from('continue\n'));
+			console.log('continuing');
+
 		}
 
 		let output: string = await new Promise((resolve) => {
 			this.debuggerMiddleware.waitForData(resolve, "runInfo");
-			setTimeout(resolve, 2000);
+
+			//dont wait if program doesnt stop at breakpoint
+			setTimeout(resolve, 5000);
 		});
 
 
 
-		const info = output.match(/Hit breakpoint ([0-9]+)(?:.|\n|\r)*at (.*):([0-9]+)/);
+		const info = output?.match(/Hit breakpoint ([0-9]+)(?:.|\n|\r)*at (.*):([0-9]+)/);
 		if (info) {
 			this._currentFile = this.getFileFullPath(info[2]);
 			this.run(reverse, Number(info[3]) - 1, undefined);
 		}
 		else {
-			this.sendEvent('continued');
+			if (!this._errorLog) {
+				this._isRunning = true;
+				this.sendEvent('continued');
+				this.sendEvent('executeProgram');
+			}
+
 		}
 
+	}
+
+
+	public continueFn() {
+		if (this._timer) {
+			clearTimeout(this._timer);
+		}
+		this._timer = setTimeout(async () => {
+			this._timer = null;
+			await this.continue();
+			this.sendEvent('continuedAfterSetBreakpointsRequest');
+		}, 5000);
 	}
 
 	/**
@@ -278,7 +316,7 @@ export class MockRuntime extends EventEmitter {
 		});
 
 
-		if (!output.includes("No app is suspended.") && !output.includes('No locals.')) {
+		if (output && !output.includes("No app is suspended.") && !output.includes('No locals.')) {
 
 			const parsedOutput = output.match(/Locals:(.*)/s);
 			if (parsedOutput) {
@@ -292,10 +330,6 @@ export class MockRuntime extends EventEmitter {
 								this._localVariables.push({ name: variableInfo[1], value: variableInfo[2], type: 'undefined', variablesReference: 0, children: [] });
 							}
 							else {
-								// if (!variableInfo[2].split(' ')[1].includes('Object') && !variableInfo[2].split(' ')[1].includes('Circle') && !variableInfo[2].split(' ')[1].includes('Lang.Array')) {
-								// 	this._localVariables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), variablesReference: 0, children: [] });
-								// }
-								// else {
 
 								this._messageSender.stdin.write(Buffer.from('print ' + variableInfo[1] + ' \n'));
 								const output: string = await new Promise((resolve) => {
@@ -331,11 +365,7 @@ export class MockRuntime extends EventEmitter {
 
 				}));
 
-				//this._localVariables=_localVariables;
-
 				return this._localVariables;
-
-
 			}
 
 		}
@@ -352,7 +382,7 @@ export class MockRuntime extends EventEmitter {
 		});
 
 
-		if (!output.includes("No app is suspended.")) {
+		if (output && !output.includes("No app is suspended.")) {
 
 			const parsedOutput = output.match(/Args:(.*) (Locals:|No locals\.)/s);
 			if (parsedOutput) {
@@ -363,7 +393,7 @@ export class MockRuntime extends EventEmitter {
 						const variableInfo = line.trim().match(/(.*) = (.*)/);
 						if (variableInfo) {
 							if (variableInfo[2] === 'null') {
-								this._localVariables.push({ name: variableInfo[1], value: variableInfo[2], type: 'undefined', variablesReference: 0, children: [] });
+								this._argsVariables.push({ name: variableInfo[1], value: variableInfo[2], type: 'undefined', variablesReference: 0, children: [] });
 							}
 							else {
 								// if (!variableInfo[2].split(' ')[1].includes('Object') && !variableInfo[2].split(' ')[1].includes('Circle') && !variableInfo[2].split(' ')[1].includes('Lang.Array')) {
@@ -377,12 +407,11 @@ export class MockRuntime extends EventEmitter {
 
 								});
 
-
 								//check for nested structure
-								if (output.split('\n').length > 1) {
+								if (output.split('\n').length > 1 && !variableInfo[2].split(' ')[1].includes('Lang.String')) {
 									let indentation = 2;
 
-									if (variableInfo[2].split(' ')[1].includes('Lang.Array')) {
+									if (variableInfo[2].split(' ')[1].includes('Lang.Array') || variableInfo[2].split(' ')[1].includes('Lang.Dictionary')) {
 										indentation = 4;
 										this.index = 2;
 									}
@@ -390,27 +419,91 @@ export class MockRuntime extends EventEmitter {
 									//const indentation=variableInfo[2].split(' ')[1].includes('Lang.Array')?4:2;
 									const variable: IMockVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
 									this.parseChildVariables(output.split('\n'), indentation, variable.children, variableHandles);
-									this._localVariables.push(variable);
+									this._argsVariables.push(variable);
 									this.index = 0;
 								}
 								else {
-									this._localVariables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), variablesReference: 0, children: [] });
+									this._argsVariables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), variablesReference: 0, children: [] });
 								}
-
-
 
 							}
 						}
 					}
 
 				}));
-
-				//this._localVariables=_localVariables;
-
-				return this._localVariables;
-
+				return this._argsVariables;
 
 			}
+
+		}
+
+		return [];
+	}
+
+	public async getGlobalVariables(variableHandles) {
+		this._messageSender.stdin.write(Buffer.from('help support\n'));
+		this._messageSender.stdin.write(Buffer.from('info variables\n'));
+
+		const output: string = await new Promise((resolve) => {
+			this.debuggerMiddleware.waitForData(resolve, "globalVariablesInfo");
+
+		});
+
+
+		if (output && !output.includes("No app is suspended.")) {
+
+			const lines = output.split('\r\n');
+			await Promise.all(lines.map(async (line) => {
+				if (line !== "") {
+
+					const variableInfo = line.trim().match(/(.*) = (.*)/);
+					if (variableInfo) {
+						if (variableInfo[2] === 'null') {
+							this._globalVariables.push({ name: variableInfo[1], value: variableInfo[2], type: 'undefined', variablesReference: 0, children: [] });
+						}
+						else {
+							// if (!variableInfo[2].split(' ')[1].includes('Object') && !variableInfo[2].split(' ')[1].includes('Circle') && !variableInfo[2].split(' ')[1].includes('Lang.Array')) {
+							// 	this._localVariables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), variablesReference: 0, children: [] });
+							// }
+							// else {
+
+							this._messageSender.stdin.write(Buffer.from('print ' + variableInfo[1] + ' \n'));
+							const output: string = await new Promise((resolve) => {
+								this.debuggerMiddleware.waitForData(resolve, 'childVariablesInfo_' + variableInfo[1]);
+
+							});
+
+
+							//check for nested structure
+							if (output.split('\n').length > 1 && !variableInfo[2].split(' ')[1].includes('Lang.String')) {
+								let indentation = 2;
+
+								if (variableInfo[2].split(' ')[1].includes('Lang.Array') || variableInfo[2].split(' ')[1].includes('Lang.Dictionary')) {
+									indentation = 4;
+									this.index = 2;
+								}
+
+								//const indentation=variableInfo[2].split(' ')[1].includes('Lang.Array')?4:2;
+								const variable: IMockVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
+								this.parseChildVariables(output.split('\n'), indentation, variable.children, variableHandles);
+								this._globalVariables.push(variable);
+								this.index = 0;
+							}
+							else {
+								this._globalVariables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), variablesReference: 0, children: [] });
+							}
+
+
+
+						}
+					}
+				}
+
+			}));
+
+			//this._localVariables=_localVariables;
+
+			return this._globalVariables;
 
 		}
 
@@ -434,7 +527,7 @@ export class MockRuntime extends EventEmitter {
 		if (this.index < lines.length) {
 
 			//skip array parentheses
-			if (/^\[$/.test(lines[this.index].trim()) || /^\][,]$/.test(lines[this.index].trim()) || /^\]$/.test(lines[this.index].trim()) || /^[,]$/.test(lines[this.index].trim()) || lines[this.index].trim().length === 1) {
+			if (/^\[$/.test(lines[this.index].trim()) || /^\][,]$/.test(lines[this.index].trim()) || /^\]$/.test(lines[this.index].trim()) || /^[,]$/.test(lines[this.index].trim()) || lines[this.index].trim().length === 1 || /^\{$/.test(lines[this.index].trim()) || /^\}[,]$/.test(lines[this.index].trim()) || /^\}$/.test(lines[this.index].trim())) {
 				this.index++;
 			}
 			if (this.index >= lines.length) {
@@ -460,24 +553,27 @@ export class MockRuntime extends EventEmitter {
 
 
 				//structured object
-				if (varInfo.length === 2) {
+				if (/^.+\s[=]$/.test(lines[this.index].trim()) || /[<].+[>]/.test(varInfo[0])) {
 					let variable: IMockVariable;
 					let indentation: number = 0;
 					let varTypeAndReference;
 					//var name case
-					if (/.*\s+[=]/.test(lines[this.index].trim())) {
 
+					if (!/[<].+[>]/.test(varInfo[0])) {
 						variable = { name: varInfo[0], children: [], variablesReference: 0 };
 						this.index++;
 						varTypeAndReference = lines[this.index].trim().split(' ');
 						variable.type = varTypeAndReference[1].replace(/[/)]|[/(]/g, '');
-
 					}
 
+
+
+
 					//var in dict
-					// else {
-					// 	variable = {name:"dict_entry",type: varInfo[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: 0 };
-					// }
+					else {
+						varTypeAndReference = lines[this.index].trim().split(' ');
+						variable = { name: 'dict_entry', type: varInfo[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: 0 };
+					}
 
 
 					//handle string var
@@ -490,7 +586,7 @@ export class MockRuntime extends EventEmitter {
 							//variable.children.push({ name: lines[this.index].trim().split(' ')[0], value: lines[this.index].trim().split(' ')[2], variablesReference: 0, children: [], type: undefined });
 							//this.index += 1;
 							variable.value = lines[this.index].trim().replace(/[,]/g, '');
-
+							variables.push(variable);
 
 							break;
 						case 'Lang.Array':
@@ -509,10 +605,9 @@ export class MockRuntime extends EventEmitter {
 						case 'Lang.Dictionary':
 							variable.variablesReference = variableHandles.create(varTypeAndReference[0]);
 							variable.value = varTypeAndReference[0];
-							console.log();
 
 							this.index += 2;
-
+							indentation = lines[this.index + 1].match(/(\s+).*/)![1].length;
 
 							break;
 						default:
@@ -529,26 +624,66 @@ export class MockRuntime extends EventEmitter {
 					}
 
 					//lines[this.index + 1]
-
-
-					this.parseChildVariables(lines, indentation, variable.children, variableHandles);
-					variables.push(variable);
-					if (this._isKeyValuePair && variables.filter(x=>x.name==='dict_entry').length>1) {
-						console.log();
-
+					if (variable.type !== 'Lang.String') {
+						this.parseChildVariables(lines, indentation, variable.children, variableHandles);
+						variables.push(variable);
+						this.index--;
 					}
 
-					this.index--;
+
+					if (this._isKeyValuePair && variables.filter(x => x.name === 'dict_entry').length === 2) {
+						const key = variables[variables.length - 2];
+						key.name = 'key';
+
+						const value = variables[variables.length - 1];
+						value.name = 'value';
+
+						const keyValuePair: IMockVariable = { name: key.value!, value: value.value, children: [key, value], variablesReference: 0 };
+						keyValuePair.variablesReference = variableHandles.create(keyValuePair.value);
+
+						variables.splice(variables.length - 2, 2);
+
+						variables.push(keyValuePair);
+
+						this._isKeyValuePair = false;
+					}
+
+
 					this.parseChildVariables(lines, currentIndentation, variables, variableHandles);
 				}
 				else {
-					if (/^null,?$/.test(varInfo[2])) {
-						variables.push({ name: /[[][0-9]+]/.test(varInfo[0]) ? varInfo[0].replace(/[[]|\]/g, '') : varInfo[0], value: varInfo[2]?.replace(/[,]/g, ''), type: 'undefined', variablesReference: 0, children: [] });
+
+					//handle dictionary entry
+					if (varInfo.length === 2) {
+						variables.push({ name: 'dict_entry', value: varInfo[0], type: varInfo[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: 0 });
+
+						if (this._isKeyValuePair && variables.filter(x => x.name === 'dict_entry').length === 2) {
+							const key = variables[variables.length - 2];
+							key.name = 'key';
+
+							const value = variables[variables.length - 1];
+							value.name = 'value';
+
+							const keyValuePair: IMockVariable = { name: key.value!, value: value.value, children: [key, value], variablesReference: 0 };
+							keyValuePair.variablesReference = variableHandles.create(keyValuePair.value);
+
+							variables.splice(variables.length - 2, 2);
+
+							variables.push(keyValuePair);
+
+							this._isKeyValuePair = false;
+						}
 					}
 					else {
-						variables.push({ name: /[[][0-9]+]/.test(varInfo[0]) ? varInfo[0].replace(/[[]|\]/g, '') : varInfo[0], value: varInfo[2], type: varInfo[3]?.replace(/([/)]|[/(])|[,]/g, ''), variablesReference: 0, children: [] });
-					}
+						if (/^null,?$/.test(varInfo[2])) {
+							variables.push({ name: /[[][0-9]+]/.test(varInfo[0]) ? varInfo[0].replace(/[[]|\]/g, '') : varInfo[0], value: varInfo[2]?.replace(/[,]/g, ''), type: 'undefined', variablesReference: 0, children: [] });
+						}
+						else {
+							variables.push({ name: /[[][0-9]+]/.test(varInfo[0]) ? varInfo[0].replace(/[[]|\]/g, '') : varInfo[0], value: varInfo[2], type: varInfo[3]?.replace(/([/)]|[/(])|[,]/g, ''), variablesReference: 0, children: [] });
+						}
 
+
+					}
 					this.parseChildVariables(lines, currentIndentation, variables, variableHandles);
 				}
 			}
@@ -589,96 +724,106 @@ export class MockRuntime extends EventEmitter {
 		return this.result;
 	}
 
-
-
-
-	// public async evaluateExpression(expression: string, variableHandles): Promise<IMockVariable[]> {
-	// 	this._messageSender.stdin.write(Buffer.from('print ' + expression + ' \n'));
-	// 	const output: string = await new Promise((resolve) => {
-	// 		this.debuggerMiddleware.waitForData(resolve, 'childVariablesInfo_' + expression);
-
-
-	// 	});
-
-	// 	//handle symbol not found error
-	// 	if (/No symbol ".*" in current context./.test(output)) {
-	// 		return [];
-	// 	}
-
-	// 	const variables: IMockVariable[] = [];
-	// 	const lines = output.split(',');
-	// 	lines[0] = lines[0].replace(/.*\r/, '');
-	// 	for (let index = 1; index < lines.length; index++) {
-
-	// 		//ignore empty line
-	// 		if (lines[index] !== "") {
-
-	// 			const isStringVarInObject = lines[index].trim().split('\n').length > 1;
-
-	// 			//handle string variable in object
-	// 			if (isStringVarInObject) {
-	// 				let varInfo = lines[index].trim().split(' ');
-	// 				varInfo = varInfo.filter(x => x !== '');
-
-	// 				variables.push({ name: varInfo[0], value: varInfo[7], type: varInfo[3].trim().replace(/[/)]|[/(]/g, ''), variablesReference: 0 });
-	// 			}
-	// 			else {
-	// 				const variableInfo = lines[index].trim().split(' ');
-
-	// 				if (variableInfo) {
-	// 					if (variableInfo[2] === 'null') {
-	// 						variables.push({ name: variableInfo[0], value: variableInfo[2], type: 'undefined', variablesReference: 0 });
-	// 					}
-	// 					else {
-	// 						if (!variableInfo[3].includes('Object')) {
-	// 							variables.push({ name: variableInfo[0], value: variableInfo[2], type: variableInfo[3].replace(/[/)]|[/(]/g, ''), variablesReference: 0 });
-	// 						}
-	// 						else {
-	// 							variables.push({ name: variableInfo[0], value: variableInfo[2], type: variableInfo[3].replace(/[/)]|[/(]/g, ''), variablesReference: variableHandles.create(variableInfo[1]) });
-	// 						}
-	// 					}
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// 	return variables;
-
-	// }
-
-	/**
-	 * Returns a fake 'stacktrace' where every 'stackframe' is a word from the current line.
-	 */
-	public async stack(startFrame: number, endFrame: number): Promise<IStack> {
-		this._messageSender.stdin.write('info frame \n');
-
-		let frameInfo: string = await new Promise((resolve) => {
-			this.debuggerMiddleware.waitForData(resolve, "frameInfo");
-
-
-		});
-
-		const info = frameInfo.match(/Stack level ([0-9]+)(?:.|\n|\r)*in (.*) at (.*):([0-9]+)/);
-		if (info) {
-			const frames = new Array<IStackFrame>();
-			const stackFrame: IStackFrame = {
-				index: Number(info[1]),
-				name: info[2],
-				file: this.getFileFullPath(info[3]),
-				line: Number(info[4])
-			};
-			frames.push(stackFrame);
-			return {
-				frames: frames,
-				count: 1
-			};
+	public async stack() {
+		const frames = new Array<IStackFrame>();
+		if (this._errorLog) {
+			if (!/ERROR:.+/.test(this._errorLog)) {
+				const stackInfo = this._errorLog.match(/.+Stack:(.*)Encountered app crash./s)[1].trim().split(' ');
+				const stackFrame: IStackFrame = {
+					index: 1,
+					name: stackInfo[1],
+					file: stackInfo[3].match(/(.+mc).+/)[1],
+					line: Number(stackInfo[3].match(/.+mc:([0-9]+)/)[1])
+				};
+				frames.push(stackFrame);
+				return {
+					frames: frames,
+					count: 1
+				};
+			}
+			// if (/ERROR:.+/.test(this._errorLog)) {
+			// 	const stackInfo = this._errorLog.match(/.+ERROR: (.*): /s)[1].trim().split(' ');
+			// 	const stackFrame: IStackFrame = {
+			// 		index: 1,
+			// 		name: stackInfo[1],
+			// 		file: stackInfo[3].match(/(.+mc).+/)[1],
+			// 		line: Number(stackInfo[3].match(/.+mc:([0-9]+)/)[1])
+			// 	};
+			// 	frames.push(stackFrame);
+			// 	return {
+			// 		frames: frames,
+			// 		count: 1
+			// 	};
+			// }
+			return undefined;
 		}
-
 		else {
-			return {
-				frames: [],
-				count: 0
-			};
+			this._messageSender.stdin.write('backtrace \n');
+
+			let frameInfo: string = await new Promise((resolve) => {
+				this.debuggerMiddleware.waitForData(resolve, "frameInfo");
+
+
+			});
+			const frameInfoLines = frameInfo.split('\n');
+			if (frameInfo) {
+				let _frameInfo;
+				let stackFrame;
+				//const currentFrameInfo = frameInfoLines[0].match(/#([0-9]+)\s+(.+) at (.+):([0-9]+)/);
+				frameInfoLines.forEach((line) => {
+
+					if (/#([0-9]+)\s+(.+) in (.*) at (.+):([0-9]+)/.test(line)) {
+						_frameInfo = line.match(/#([0-9]+)\s+(.+) in (.*) at (.+):([0-9]+)/);
+						stackFrame = {
+							index: Number(_frameInfo[1]),
+							name: _frameInfo[3],
+							file: this.getFileFullPath(_frameInfo[4]),
+							line: Number(_frameInfo[5])
+						} as IStackFrame;
+					}
+					else {
+						_frameInfo = line.match(/#([0-9]+)\s+(.+) at (.+):([0-9]+)/);
+						stackFrame = {
+							index: Number(_frameInfo[1]),
+							name: _frameInfo[2],
+							file: this.getFileFullPath(_frameInfo[3]),
+							line: Number(_frameInfo[4])
+						} as IStackFrame;
+					}
+					frames.push(stackFrame);
+				});
+				return {
+					frames: frames,
+					count: 1
+				};
+			}
+			else {
+				return {
+					frames: [],
+					count: 0
+				};
+			}
+			// const info = frameInfo.match(/Stack level ([0-9]+)(?:.|\n|\r)*in (.*) at (.*):([0-9]+)/);
+			// if (info) {
+
+			// 	const stackFrame: IStackFrame = {
+			// 		index: Number(info[1]),
+			// 		name: info[2],
+			// 		file: this.getFileFullPath(info[3]),
+			// 		line: Number(info[4])
+			// 	};
+			// 	frames.push(stackFrame);
+			// 	return {
+			// 		frames: frames,
+			// 		count: 1
+			// 	};
+			// }
+
+			// else {
+
+			//}
 		}
+
 
 
 	}
@@ -755,6 +900,40 @@ export class MockRuntime extends EventEmitter {
 		return undefined;
 	}
 
+	public parseErrorInfo() {
+		if (this._errorLog) {
+
+			//app crash
+			if (!/ERROR:.+/.test(this._errorLog)) {
+
+
+				const error: IError = {
+					id: '1',
+					description: this._errorLog.match(/.+Error:(.+)\nDetails.+/s)[1].trim(),
+					details: {
+						message: this._errorLog.match(/.+Details:(.+)\nStack.+/s)[1].trim(),
+						stackTrace: this._errorLog.match(/.+Stack: \n  -(.+)\n\nEncountered app crash.+/s)[1].trim()
+					}
+				};
+				return error;
+			}
+
+			//compile error
+			// if (!/ERROR:.+/.test(this._errorLog)) {
+			// 	const error: IError = {
+			// 		id: '1',
+			// 		description: this._errorLog.match(/.+Error:(.+)\nDetails.+/s)[1].trim(),
+			// 		details: {
+			// 			message: this._errorLog.match(/.+Details:(.+)\nStack.+/s)[1].trim(),
+			// 			stackTrace: this._errorLog.match(/.+Stack: \n  -(.+)\n\nEncountered app crash.+/s)[1].trim()
+			// 		}
+			// 	};
+			// 	return error;
+			// }
+
+		}
+		return undefined;
+	}
 	/*
 	 * Clear all breakpoints for file.
 	 */
@@ -910,7 +1089,7 @@ export class MockRuntime extends EventEmitter {
 	}
 
 	private async addBreakPointDebugger(ln: number, path: string) {
-		if (this.isStarted) {
+		if (this._isRunning) {
 			this._messageSender.stdin.write(Buffer.from('a\r\n'));
 			await new Promise(resolve => setTimeout(resolve, 5000));
 		}
@@ -954,29 +1133,48 @@ export class MockRuntime extends EventEmitter {
 
 
 		this._messageSender.stdout.on('data', async (data) => {
+
 			if (data.toString().includes('Pausing execution')) {
-
-
-
-				this.sendEvent('stopOnPause');
+				this.sendEvent('pauseProgramExecution');
 			}
-
+			//handle compile errors
+			//if ()
 
 			//handle debugger crash
 			if (data.toString().includes('Failed to get stack backtrace: Timeout')) {
 				console.error('Connect IQ: Failed to get stack backtrace: Timeout');
-				this.sendEvent('error', 'Connect IQ: Failed to get stack backtrace: Timeout');
+				this.sendEvent('error', `Connect IQ: ${data.toString()}`);
 			}
-			this.buffer += data;
+			if (data.toString().includes('Command failed')) {
+				console.error('Connect IQ: Command failed');
+				this.sendEvent('error', `Connect IQ: ${data.toString()}`);
+			}
+
+
+
+			this._buffer += data;
+
+			//handle fatal errors
+
+			if (/.+Error:.+Details:.+Stack:.+Encountered app crash.+/s.test(this._buffer)) {
+				//this.parseError(data.toString());
+				this._errorLog += this._buffer;
+				this.sendEvent('stopOnException', this._buffer);
+			}
+
+
+
+			console.log("buffer: " + this._buffer);
+
 			//this.testBuffer += data;
 
-			let outputLines: string[] = this.buffer.split("(mdd) ");
+			let outputLines: string[] = this._buffer.split("(mdd) ");
 
 
 			outputLines = outputLines.filter((el) => { return el.length !== 0; });
 			if (outputLines.length > 0) {
 				let lastIndex;
-				if (/(.|\n|\r)*[(]mdd[)]\s$/.test(this.buffer) || this.buffer === 'Continuing app.\r\n\r\n') {
+				if (/(.|\n|\r)*[(]mdd[)]\s$/.test(this._buffer) || this._buffer === 'Continuing app.\r\n\r\n') {
 
 					lastIndex = outputLines.length - 1;
 				}
@@ -991,14 +1189,20 @@ export class MockRuntime extends EventEmitter {
 				for (let index = 0; index <= lastIndex; index++) {
 
 					this.debuggerMiddleware.onData(outputLines[index].trim());
-					this.buffer = this.buffer.replace(outputLines[index] + "(mdd) ", "");
+					this._buffer = this._buffer.replace(outputLines[index] + "(mdd) ", "");
 
 				}
 
 			}
 		});
 		this._messageSender.stderr.on('data', (err) => {
-			console.log("error: " + err);
+
+			if (/ERROR:.+/.test(err.toString())) {
+
+				this._errorLog += err.toString();
+				this.sendEvent('output', err.toString());
+			}
+
 		});
 		this._messageSender.stdout.on('error', (err) => {
 			console.log("error: " + err);
@@ -1018,6 +1222,9 @@ export class MockRuntime extends EventEmitter {
 		this._debuggerStarted = true;
 		return 'launched';
 
+	}
+	private parseError(errorMessgae: string) {
+		//const errorInfo=errorMessgae.match(/.+(Error:.+)Details:.+Stack:.+Encountered app crash.+/s);
 	}
 	private sendEvent(event: string, ...args: any[]) {
 		setImmediate(_ => {

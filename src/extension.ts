@@ -14,8 +14,11 @@ import { WorkspaceFolder, DebugConfiguration, ProviderResult, CancellationToken 
 import { MockDebugSession } from './monkeycDebug';
 import { spawn } from 'child_process';
 import { glob } from 'glob';
-import { readFile, writeFile, createReadStream } from 'fs';
-var path = require('path');
+import { readFile, writeFile, createReadStream, readdirSync } from 'fs';
+import * as path from 'path';
+import { rejects } from 'assert';
+
+var fs = require("fs-extra");
 const readline = require('readline');
 
 
@@ -72,6 +75,88 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 	));
+
+	context.subscriptions.push(vscode.commands.registerCommand(
+		'extension.mock-debug.createProjectFromTemplate',
+		async () => {
+
+			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
+			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+			if (!sdkPath) {
+				vscode.window.showErrorMessage('No templates found, please select sdk path in the debugger config.');
+				vscode.commands.executeCommand('extension.mock-debug.config');
+			}
+			if (!projectPath) {
+				vscode.window.showErrorMessage('Project path not found.');
+				vscode.commands.executeCommand('extension.mock-debug.config');
+			}
+			else {
+
+				//const templatesPath = `${sdkPath}\\bin\\templates`;
+				const getDirectories = source =>
+					readdirSync(source, { withFileTypes: true })
+						.filter(dirent => dirent.isDirectory())
+						.map(dirent => dirent.name);
+				//const p = glob.sync(`${sdkPath}/bin/templates*/`);
+				const projectName = await vscode.window.showInputBox({ placeHolder: 'Set Project Name' });
+				const type = await vscode.window.showQuickPick(await getDirectories(`${sdkPath}\\bin\\templates`), { placeHolder: "Select a project type" });
+				const templates = await getDirectories(`${sdkPath}\\bin\\templates\\${type}`);
+				let template: string | undefined = "";
+				if (templates.length === 1) {
+					template = templates[0];
+				}
+				if (templates.length > 1) {
+					template = await vscode.window.showQuickPick(await getDirectories(`${sdkPath}\\bin\\templates\\${type}`), { placeHolder: "Select a template" });
+				}
+
+
+				if (template) {
+					vscode.window.withProgress({
+						location: vscode.ProgressLocation.Notification,
+						title: "Creating files",
+						cancellable: true
+					}, (progress, token) => {
+						return new Promise(async (resolve, token) => {
+
+							//copy template contents
+							//Promise.all()
+							try {
+								await fs.copy(`${sdkPath}\\bin\\templates\\${type}\\${template}`, projectPath);
+							}
+							catch (err) {
+								token(err);
+							}
+							glob(`${projectPath}\\source\\**\\*.mc`, {}, (err, files) => {
+
+								files.forEach(async file => {
+
+									let content = await fs.readFile(file);
+									const wordsToReplace = content.toString().match(/[$][{].+ClassName[}]/g);
+									wordsToReplace.forEach(word => {
+										let trimmedWord = word.match(/[$][{](.+)ClassName[}]/)[1];
+										content = content.toString().replace(word, projectName + trimmedWord.charAt(0).toUpperCase() + trimmedWord.substring(1));
+									});
+									//content = content.replace(/[$][{](.+)ClassName[}]/, `${projectName}$1`);
+									await fs.writeFile(file, content, 'utf8');
+								});
+								resolve("Done.");
+							});
+
+							//update source files
+
+
+						});
+					});
+
+				}
+				//console.log(getDirectories(templatesPath));
+				console.log();
+
+			}
+		}
+
+	));
+
 	context.subscriptions.push(vscode.commands.registerCommand(
 		'extension.mock-debug.showErrorMessage',
 		(message) => {
@@ -209,9 +294,15 @@ export function activate(context: vscode.ExtensionContext) {
 				message => {
 					switch (message.command) {
 						case 'alert':
-							context.globalState.update('sdkPath', message.text.split(' ')[0]);
-							context.globalState.update('projectPath', message.text.split(' ')[1]);
-							const launchFile: string[] = glob.sync(path.normalize(message.text.split(' ')[1]) + '/**/.vscode/launch.json');
+
+							//const pp=path.normalize(message.text.split(' ')[1])
+							const sdkPath = path.normalize(message.text.split('~')[0]).charAt(1).toLowerCase() + path.normalize(message.text.split('~')[0]).slice(2);
+							const projectPath = path.normalize(message.text.split('~')[1]).charAt(1).toLowerCase() + path.normalize(message.text.split('~')[1]).slice(2);
+							//
+							context.globalState.update('sdkPath', sdkPath);
+							context.globalState.update('projectPath', projectPath);
+
+							const launchFile: string[] = glob.sync(projectPath + '/**/.vscode/launch.json');
 							//update launch.json
 							readFile(launchFile[0], 'utf8', function readFileCallback(err, data) {
 								if (err) {
@@ -219,8 +310,8 @@ export function activate(context: vscode.ExtensionContext) {
 								} else {
 									let obj = JSON.parse(data);
 
-									obj.configurations[0].sdkPathFromConfig = message.text.split(' ')[0];
-									obj.configurations[0].projectPathFromConfig = message.text.split(' ')[0];
+									obj.configurations[0].sdkPath = sdkPath;
+									obj.configurations[0].projectPath = projectPath;
 									// obj.table.push({id: 2, square:3}); //add some data
 									let json = JSON.stringify(obj); //convert it back to json
 									writeFile(launchFile[0], json, 'utf8', () => { }); // write it back 
@@ -231,8 +322,9 @@ export function activate(context: vscode.ExtensionContext) {
 						case 'openBrowseDialog':
 							vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true }).then(fileUri => {
 								if (fileUri) {
-									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', {path:fileUri[0].path,id:message.text.startsWith('sdkPath')?'sdkPath':'projectPath'});
+									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { path: fileUri[0].path, id: message.text.startsWith('sdkPath') ? 'sdkPath' : 'projectPath' });
 								}
+
 
 							});
 							break;
@@ -302,6 +394,7 @@ export function activate(context: vscode.ExtensionContext) {
 							console.log(data_);
 
 							buffer += data;
+
 							if (buffer.includes('###')) {
 
 								if (buffer.includes('Executing test')) {
@@ -325,9 +418,9 @@ export function activate(context: vscode.ExtensionContext) {
 									});
 									glob(projectPath + '/source/**/*.mc', {}, (err, files) => {
 
-										files.forEach(async element => {
+										files.forEach(async file => {
 
-											const fileStream = createReadStream(element);
+											const fileStream = createReadStream(file);
 
 											const rl = readline.createInterface({
 												input: fileStream,
@@ -371,7 +464,7 @@ export function activate(context: vscode.ExtensionContext) {
 									buffer = '';
 								}
 								else {
-									console.log('No unit tests found.');
+									vscode.window.showErrorMessage('No unit tests found.');
 								}
 							}
 
@@ -387,9 +480,9 @@ export function activate(context: vscode.ExtensionContext) {
 						const cmd = spawn('cmd', ['/K'], { shell: true });
 						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
 						cmd.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
-						cmd.stdin.write(Buffer.from('monkeyc -d d2bravo -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "c:\\Users\\ondre\\Desktop\\GARMIN SDK\\developer_key.der" -t\n'));
+						cmd.stdin.write(Buffer.from('monkeyc -d d2bravo -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "' + sdkPath + '\\developer_key.der" -t\n'));
 						cmd.stdin.write(Buffer.from('connectiq\n'));
-						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t\n'));
+						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\bin\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t\n'));
 						//cmd.stdin.write(Buffer.from('"C:\\Users\\ondre\\Desktop\\GARMIN%SDK\\connectiq-sdk-win-3.1.9-2020-06-24-1cc9d3a70\\bin\\monkeydo.bat" "C:\\Users\\ondre\\Desktop\\debuggerExtensionStart\\WATCHFACE\\bin\\WATCHFACE.prg" d2bravo /t\n'));
 						cmd.stdin.write(Buffer.from('###\n'));
 						//cmd.stdin.write(Buffer.from('simulator & [1] 27984\n'));
@@ -397,6 +490,8 @@ export function activate(context: vscode.ExtensionContext) {
 							const tests: UnitTest[] = [];
 							//	const data_ = data.toString();
 							buffer += data;
+							console.log(buffer);
+							
 							if (buffer.includes('###')) {
 
 								if (buffer.includes('Executing test')) {
@@ -470,7 +565,7 @@ export function activate(context: vscode.ExtensionContext) {
 									buffer = '';
 								}
 								else {
-									console.log('No unit tests found.');
+									vscode.window.showErrorMessage('No unit tests found.');
 								}
 							}
 
@@ -520,7 +615,7 @@ function getWebviewContent() {
 			  document.getElementById('saveBttn').addEventListener('click',()=>{
 				vscode.postMessage({
 					command: 'alert',
-					text: document.getElementById('sdkPath').value+" "+document.getElementById('projectPath').value
+					text: document.getElementById('sdkPath').value+"~"+document.getElementById('projectPath').value
 				})
 			  });
 			  let count = 0;

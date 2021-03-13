@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "await-notify": "1.0.1",
+    "fs-extra": "^9.1.0",
     "node-cmd": "^3.0.0",
     "vscode-debugadapter": "1.41.1",
     "xml2js": "^0.4.23"
@@ -67,7 +68,8 @@
     "onCommand:extension.mock-debug.debugEditorContents",
     "onCommand:extension.mock-debug.config",
     "onCommand:extension.mock-debug.UnitTests",
-    "onCommand:extension.mock-debug.restartDebuggingSession"
+    "onCommand:extension.mock-debug.restartDebuggingSession",
+    "onCommand:extension.mock-debug.createProjectFromTemplate"
   ],
   "contributes": {
     "menus": {
@@ -146,6 +148,10 @@
       {
         "command": "extension.mock-debug.selectDevice",
         "title": "Select garmin device"
+      },
+      {
+        "command": "extension.mock-debug.createProjectFromTemplate",
+        "title": "Create Connect IQ project from template"
       }
     ],
     "breakpoints": [
@@ -188,16 +194,6 @@
               "sdkPath": {
                 "type": "string",
                 "description": "Connect IQ SDK path",
-                "default": true
-              },
-              "sdkPathFromConfig": {
-                "type": "string",
-                "description": "Connect IQ SDK path from debugger config",
-                "default": true
-              },
-              "projectPathFromConfig": {
-                "type": "string",
-                "description": "Project path from debugger config",
                 "default": true
               }
             }
