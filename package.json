@@ -127,7 +127,7 @@
       },
       {
         "command": "extension.mock-debug.getProjectPath",
-        "title": "Monkey C debug config"
+        "title": "Connect IQ debug config"
       },
       {
         "command": "extension.mock-debug.UnitTests",
@@ -142,16 +142,16 @@
         "title": "Show error message"
       },
       {
-        "command": "extension.mock-debug.restartDebuggingSession",
-        "title": "Restart debugging session"
-      },
-      {
         "command": "extension.mock-debug.selectDevice",
         "title": "Select garmin device"
       },
       {
         "command": "extension.mock-debug.createProjectFromTemplate",
         "title": "Create Connect IQ project from template"
+      },
+      {
+        "command": "extension.mock-debug.restartDebugSession",
+        "title": "Restart debug session"
       }
     ],
     "breakpoints": [

@@ -77,6 +77,14 @@ export function activate(context: vscode.ExtensionContext) {
 	));
 
 	context.subscriptions.push(vscode.commands.registerCommand(
+		'extension.mock-debug.restartDebugSession',
+		() => {
+			vscode.debug.activeDebugSession?.customRequest('restart');
+		}
+
+	));
+
+	context.subscriptions.push(vscode.commands.registerCommand(
 		'extension.mock-debug.createProjectFromTemplate',
 		async () => {
 
@@ -165,17 +173,6 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 	));
-
-	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.mock-debug.restartDebuggingSession',
-		() => {
-			console.log(vscode.debug.activeDebugSession);
-
-			//return context.globalState.get('projectPath');
-		}
-
-	));
-
 
 	context.subscriptions.push(vscode.commands.registerCommand(
 		'extension.mock-debug.sendMessageToWebView',
@@ -277,7 +274,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 	*/
 	context.subscriptions.push(
-		vscode.commands.registerCommand('extension.mock-debug.config', () => {
+		vscode.commands.registerCommand('extension.mock-debug.config', async () => {
 			currentPanel = vscode.window.createWebviewPanel(
 				'debug Config',
 				'Debug Config',
@@ -289,15 +286,27 @@ export function activate(context: vscode.ExtensionContext) {
 
 			currentPanel.webview.html = getWebviewContent();
 
+			//Load sdk path, project
+			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
+			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+			if (sdkPath) {
+				vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { sdkPath });
+			}
+			if (projectPath) {
+				vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { projectPath });
+			}
+
 			// Handle messages from the webview
 			currentPanel.webview.onDidReceiveMessage(
 				message => {
 					switch (message.command) {
-						case 'alert':
+						case 'data':
 
 							//const pp=path.normalize(message.text.split(' ')[1])
-							const sdkPath = path.normalize(message.text.split('~')[0]).charAt(1).toLowerCase() + path.normalize(message.text.split('~')[0]).slice(2);
-							const projectPath = path.normalize(message.text.split('~')[1]).charAt(1).toLowerCase() + path.normalize(message.text.split('~')[1]).slice(2);
+							//const sdkPath = path.normalize(message.text.split('~')[0]).charAt(1).toLowerCase() + path.normalize(message.text.split('~')[0]).slice(2);
+							const sdkPath = message.text.split('~')[0];
+							const projectPath = message.text.split('~')[1];
+							//const projectPath = path.normalize(message.text.split('~')[1]).charAt(1).toLowerCase() + path.normalize(message.text.split('~')[1]).slice(2);
 							//
 							context.globalState.update('sdkPath', sdkPath);
 							context.globalState.update('projectPath', projectPath);
@@ -322,7 +331,7 @@ export function activate(context: vscode.ExtensionContext) {
 						case 'openBrowseDialog':
 							vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true }).then(fileUri => {
 								if (fileUri) {
-									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { path: fileUri[0].path, id: message.text.startsWith('sdkPath') ? 'sdkPath' : 'projectPath' });
+									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { path: normalizePath(fileUri[0].path), id: message.text.startsWith('sdkPath') ? 'sdkPath' : 'projectPath' });
 								}
 
 
@@ -491,7 +500,7 @@ export function activate(context: vscode.ExtensionContext) {
 							//	const data_ = data.toString();
 							buffer += data;
 							console.log(buffer);
-							
+
 							if (buffer.includes('###')) {
 
 								if (buffer.includes('Executing test')) {
@@ -591,6 +600,10 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 }
+function normalizePath(rawPath){
+	return path.normalize(rawPath.charAt(1).toLowerCase() + path.normalize(rawPath).slice(2));
+}
+
 function getWebviewContent() {
 	return `<!DOCTYPE html>
   <html lang="en">
@@ -600,21 +613,22 @@ function getWebviewContent() {
 	  <title>Cat Coding</title>
   </head>
   <body>
-	  <h1>SDK path</h1>
-	  <input type="text" id="sdkPath" name="sdkPath">
-	  <input class="browseBttn" type="button" id="sdkPathBttn" name="sdkPathBttn" value="Browse">
-	  <h1>Project path</h1>
-	  <input type="text" id="projectPath" name="projectPath">
-	  <input class="browseBttn" type="button" id="projectPathBttn" name="projectPathBttn" value="Browse">
+  	
+	  <h1 style="font-family:var(--vscode-editor-font-family);">Sdk path</h1>
+	  <input style="background-color:var(--vscode-input-background);color:var(--vscode-input-foreground);" type="text" id="sdkPath" name="sdkPath">
+	  <input style="background-color:var(--vscode-button-background);color:var(--vscode-button-foreground);" class="browseBttn vscode-dark" type="button" id="sdkPathBttn" name="sdkPathBttn" value="Browse">
+	  <h1 style="font-family:var(--vscode-editor-font-family);">Project path</h1>
+	  <input style="background-color:var(--vscode-input-background);color:var(--vscode-input-foreground);" type="text" id="projectPath" name="projectPath">
+	  <input style="background-color:var(--vscode-button-background);color:var(--vscode-button-foreground);" class="browseBttn" type="button" id="projectPathBttn" name="projectPathBttn" value="Browse">
 	  <br>
-	  <input style="display:block;margin-top:20px;" type="submit" id="saveBttn" value="Save">
+	  <input style="background-color:var(--vscode-button-background);color:var(--vscode-button-foreground);" style="display:block;margin-top:20px;" type="submit" id="saveBttn" value="Save">
+	 
 	  <script>
-		  
+			  //const counter = document.getElementById('sdkPath');
 			  const vscode = acquireVsCodeApi();
-			  const counter = document.getElementById('sdkPath');
 			  document.getElementById('saveBttn').addEventListener('click',()=>{
 				vscode.postMessage({
-					command: 'alert',
+					command: 'data',
 					text: document.getElementById('sdkPath').value+"~"+document.getElementById('projectPath').value
 				})
 			  });
@@ -628,11 +642,58 @@ function getWebviewContent() {
 					})
 				  });
 			});
+
+			setInterval(() => {
+			const previousState = vscode.getState();
+			const sdk=document.getElementById('sdkPath');
+			const project=document.getElementById('projectPath');
+
+			//restore state
+			if (previousState){
+			if (!sdk.value || sdk.value===''){
+				if (previousState.sdkPath){
+					sdk.value=previousState.sdkPath;
+				}
+			}
+			if (!project.value || project.value===''){
+				if (previousState.projectPath){
+					project.value=previousState.projectPath;
+				}
+			}
+			}
+			  }, 100);
+			
 			window.addEventListener('message', event => {
 				const message = event.data;
 				const data=JSON.parse(message);
 				if (data){
-					document.getElementById(data.id).value=data.path;
+					if (data.path){
+						document.getElementById(data.id).value=data.path;
+					}
+					let state = vscode.getState();
+					if (!state){
+						state={};
+					}
+					//const newState={};
+					if (data.sdkPath){
+						const sdk=document.getElementById('sdkPath');
+						sdk.value=data.sdkPath;
+						
+						state.sdkPath=data.sdkPath;
+						console.log('added sdk path');
+						console.dir(state);
+					}
+					if (data.projectPath){
+						const project=document.getElementById('projectPath');
+						project.value=data.projectPath;
+
+						state.projectPath=data.projectPath;
+						console.log('added project path');
+						console.dir(state);
+					}
+					if (Object.keys(state).length > 0){
+						vscode.setState(state);
+					}
 				}
 				
 			});

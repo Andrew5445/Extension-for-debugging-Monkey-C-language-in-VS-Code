@@ -3,8 +3,7 @@ interface IWaitingFunction {
     action: string;
 }
 
-
-export class DebuggerMiddleware {
+export class DebuggerListener {
     private waitingFunctions: IWaitingFunction[] = [];
 
     private globalVariablesInfoIncoming = false;
@@ -58,7 +57,7 @@ export class DebuggerMiddleware {
                             if (this.globalVariablesInfoIncoming) {
                                 waitingFunction.fn(str);
                                 this.removeWaitingFunction(waitingFunction);
-                                this.globalVariablesInfoIncoming=false;
+                                this.globalVariablesInfoIncoming = false;
                             }
                     }
 

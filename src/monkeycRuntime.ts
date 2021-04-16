@@ -5,10 +5,11 @@
 import { readFileSync } from 'fs';
 import { EventEmitter } from 'events';
 import { spawn } from 'child_process';
-import { DebuggerMiddleware } from './debuggerMiddleware';
+import { DebuggerListener } from './debuggerListener';
 import { glob } from 'glob';
 import * as path from 'path';
 import { match } from 'assert';
+import { ThemeIcon } from 'vscode';
 
 export interface IMockBreakpoint {
 	id: number;
@@ -95,7 +96,7 @@ export class MockRuntime extends EventEmitter {
 
 	private _breakAddresses = new Set<string>();
 
-	private debuggerMiddleware = new DebuggerMiddleware();
+	private debuggerListener = new DebuggerListener();
 
 	private _noDebug = false;
 
@@ -180,7 +181,7 @@ export class MockRuntime extends EventEmitter {
 		}
 
 		let output: string = await new Promise((resolve) => {
-			this.debuggerMiddleware.waitForData(resolve, "runInfo");
+			this.debuggerListener.waitForData(resolve, "runInfo");
 
 			//dont wait if program doesnt stop at breakpoint
 			setTimeout(resolve, 5000);
@@ -227,7 +228,7 @@ export class MockRuntime extends EventEmitter {
 		this._messageSender.stdin.write(Buffer.from('frame \n'));
 
 		const output: string = await new Promise((resolve) => {
-			this.debuggerMiddleware.waitForData(resolve, "nextInfo");
+			this.debuggerListener.waitForData(resolve, "nextInfo");
 
 		});
 
@@ -252,7 +253,7 @@ export class MockRuntime extends EventEmitter {
 		this._messageSender.stdin.write(Buffer.from('step\r\n'));
 		this._messageSender.stdin.write(Buffer.from('frame\r\n'));
 		const output: string = await new Promise((resolve) => {
-			this.debuggerMiddleware.waitForData(resolve, "nextInfo");
+			this.debuggerListener.waitForData(resolve, "nextInfo");
 
 
 		});
@@ -311,7 +312,7 @@ export class MockRuntime extends EventEmitter {
 		this._messageSender.stdin.write(Buffer.from('info frame\n'));
 
 		const output: string = await new Promise((resolve) => {
-			this.debuggerMiddleware.waitForData(resolve, "variablesInfo");
+			this.debuggerListener.waitForData(resolve, "variablesInfo");
 
 		});
 
@@ -333,7 +334,7 @@ export class MockRuntime extends EventEmitter {
 
 								this._messageSender.stdin.write(Buffer.from('print ' + variableInfo[1] + ' \n'));
 								const output: string = await new Promise((resolve) => {
-									this.debuggerMiddleware.waitForData(resolve, 'childVariablesInfo_' + variableInfo[1]);
+									this.debuggerListener.waitForData(resolve, 'childVariablesInfo_' + variableInfo[1]);
 
 								});
 
@@ -377,7 +378,7 @@ export class MockRuntime extends EventEmitter {
 		this._messageSender.stdin.write(Buffer.from('info frame\n'));
 
 		const output: string = await new Promise((resolve) => {
-			this.debuggerMiddleware.waitForData(resolve, "variablesInfo");
+			this.debuggerListener.waitForData(resolve, "variablesInfo");
 
 		});
 
@@ -403,7 +404,7 @@ export class MockRuntime extends EventEmitter {
 
 								this._messageSender.stdin.write(Buffer.from('print ' + variableInfo[1] + ' \n'));
 								const output: string = await new Promise((resolve) => {
-									this.debuggerMiddleware.waitForData(resolve, 'childVariablesInfo_' + variableInfo[1]);
+									this.debuggerListener.waitForData(resolve, 'childVariablesInfo_' + variableInfo[1]);
 
 								});
 
@@ -445,7 +446,7 @@ export class MockRuntime extends EventEmitter {
 		this._messageSender.stdin.write(Buffer.from('info variables\n'));
 
 		const output: string = await new Promise((resolve) => {
-			this.debuggerMiddleware.waitForData(resolve, "globalVariablesInfo");
+			this.debuggerListener.waitForData(resolve, "globalVariablesInfo");
 
 		});
 
@@ -469,7 +470,7 @@ export class MockRuntime extends EventEmitter {
 
 							this._messageSender.stdin.write(Buffer.from('print ' + variableInfo[1] + ' \n'));
 							const output: string = await new Promise((resolve) => {
-								this.debuggerMiddleware.waitForData(resolve, 'childVariablesInfo_' + variableInfo[1]);
+								this.debuggerListener.waitForData(resolve, 'childVariablesInfo_' + variableInfo[1]);
 
 							});
 
@@ -519,10 +520,6 @@ export class MockRuntime extends EventEmitter {
 		//only for testing
 
 		this.index++;
-		if (lines[this.index] === '      connectionInfo =') {
-			console.log();
-
-		}
 
 		if (this.index < lines.length) {
 
@@ -761,7 +758,7 @@ export class MockRuntime extends EventEmitter {
 			this._messageSender.stdin.write('backtrace \n');
 
 			let frameInfo: string = await new Promise((resolve) => {
-				this.debuggerMiddleware.waitForData(resolve, "frameInfo");
+				this.debuggerListener.waitForData(resolve, "frameInfo");
 
 
 			});
@@ -979,9 +976,6 @@ export class MockRuntime extends EventEmitter {
 	}
 
 
-
-
-
 	/**
 	 * Run through the file.
 	 * If stepEvent is specified only run a single step and emit the stepEvent.
@@ -1134,6 +1128,9 @@ export class MockRuntime extends EventEmitter {
 
 		this._messageSender.stdout.on('data', async (data) => {
 
+			if (data.toString().includes('Failed to launch the device: Timeout')){
+				this.restartSession('Failed to launch the device: Timeout');
+			}
 			if (data.toString().includes('Pausing execution')) {
 				this.sendEvent('pauseProgramExecution');
 			}
@@ -1188,7 +1185,7 @@ export class MockRuntime extends EventEmitter {
 				}
 				for (let index = 0; index <= lastIndex; index++) {
 
-					this.debuggerMiddleware.onData(outputLines[index].trim());
+					this.debuggerListener.onData(outputLines[index].trim());
 					this._buffer = this._buffer.replace(outputLines[index] + "(mdd) ", "");
 
 				}
@@ -1214,7 +1211,7 @@ export class MockRuntime extends EventEmitter {
 		});
 
 		await new Promise((resolve) => {
-			this.debuggerMiddleware.waitForData(resolve, "launchDebuggerInfo");
+			this.debuggerListener.waitForData(resolve, "launchDebuggerInfo");
 
 
 		});
@@ -1223,9 +1220,14 @@ export class MockRuntime extends EventEmitter {
 		return 'launched';
 
 	}
-	private parseError(errorMessgae: string) {
-		//const errorInfo=errorMessgae.match(/.+(Error:.+)Details:.+Stack:.+Encountered app crash.+/s);
+	private restartSession(reason){
+
+		//kill simulator
+		this._messageSender.stdin.write(Buffer.from('taskkill /f /t /im simulator.exe\n'));
+
+		this.sendEvent('restart',reason);
 	}
+
 	private sendEvent(event: string, ...args: any[]) {
 		setImmediate(_ => {
 			this.emit(event, ...args);
