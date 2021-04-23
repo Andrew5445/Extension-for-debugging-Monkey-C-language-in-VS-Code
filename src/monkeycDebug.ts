@@ -159,7 +159,7 @@ export class MockDebugSession extends LoggingDebugSession {
 				e.body.line = Number(source[2]);
 				e.body.category = 'stderr';
 			}
-			vscode.window.showErrorMessage(text, { modal: true });
+			vscode.window.showErrorMessage(text);
 			this.sendEvent(e);
 		});
 		this._runtime.on('end', () => {
@@ -178,7 +178,7 @@ export class MockDebugSession extends LoggingDebugSession {
 	 * The 'initialize' request is the first request called by the frontend
 	 * to interrogate the features the debug adapter provides.
 	 */
-	
+
 
 	public sendRequest(command: string, args: any, timeout: number, cb: (response: DebugProtocol.Response) => void): void {
 		logger.verbose(`To client: ${JSON.stringify(command)}(${JSON.stringify(args)}), timeout: ${timeout}`);
@@ -413,12 +413,18 @@ export class MockDebugSession extends LoggingDebugSession {
 
 		try {
 			if (this._variableHandles.get(args.variablesReference) === 'local') {
+
 				actualVariables = await this._runtime.getLocalVariables(this._variableHandles);
+
+
 			}
 			else if (this._variableHandles.get(args.variablesReference) === 'args') {
+
 				actualVariables = await this._runtime.getArgsVariables(this._variableHandles);
+
 			}
 			else if (this._variableHandles.get(args.variablesReference) === 'global') {
+
 				actualVariables = await this._runtime.getGlobalVariables(this._variableHandles);
 
 			}
@@ -499,8 +505,8 @@ export class MockDebugSession extends LoggingDebugSession {
 		//const res;
 		// //this.customRequest('variables',)
 		// const expressionValue=await (await this._runtime.evaluateExpression('self', this._variableHandles)).concat(await this._runtime.getLocalVariables(this._variableHandles)).filter(x => x.name === args.expression);
-		const result = this._runtime.evaluate(args.expression, 0, this._runtime.localVariables.concat(this._runtime.argsVariables));
-
+		const result = this._runtime.evaluate(args.expression, 0, this._runtime.localVariables.concat(this._runtime.argsVariables).concat(this._runtime.globalVariables));
+		this._runtime.clearVariable();
 
 		// const key = Object.keys(this._variableHandles.get()).find(key => this._variableHandles[key] === args.expression);
 		// console.log(args);
@@ -551,11 +557,19 @@ export class MockDebugSession extends LoggingDebugSession {
 		// 	// 	const childVariables=await this._runtime.evaluateExpression(expressionValue[0].name,this._variableHandles);
 
 		// 	// }
+		
+		
 		if (result) {
 			response.body = {
 				result: result.value!,
 				variablesReference: result.variablesReference
 			};
+		}
+		if (!result) {
+			
+			response.success=false;
+			response.message=`${args.expression} is not defined`;
+			
 		}
 
 		this.sendResponse(response);

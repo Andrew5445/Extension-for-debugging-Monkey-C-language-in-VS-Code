@@ -170,6 +170,9 @@ export class MockRuntime extends EventEmitter {
 	 * Continue execution to the end/beginning.
 	 */
 	public async continue(reverse = false) {
+
+		this.clearVariables();
+
 		if (!this._isStarted) {
 			this._messageSender.stdin.write(Buffer.from('run \n'));
 			this._isStarted = true;
@@ -221,6 +224,9 @@ export class MockRuntime extends EventEmitter {
 	 * Step to the next/previous non empty line.
 	 */
 	public async step(reverse = false, event = 'stopOnStep') {
+
+		this.clearVariables();
+
 		this._messageSender.stdin.write(Buffer.from('next \n'));
 
 		//await new Promise(resolve => setTimeout(resolve, 1000));
@@ -250,6 +256,9 @@ export class MockRuntime extends EventEmitter {
 	 * "Step into" for Mock debug means: go to next character
 	 */
 	public async stepIn(targetId: number | undefined, event = 'stopOnStep') {
+
+		this.clearVariables();
+
 		this._messageSender.stdin.write(Buffer.from('step\r\n'));
 		this._messageSender.stdin.write(Buffer.from('frame\r\n'));
 		const output: string = await new Promise((resolve) => {
@@ -271,6 +280,9 @@ export class MockRuntime extends EventEmitter {
 	 * "Step out" for Mock debug means: go to previous character
 	 */
 	public stepOut() {
+
+		this.clearVariables();
+
 		if (typeof this._currentColumn === 'number') {
 			this._currentColumn -= 1;
 			if (this._currentColumn === 0) {
@@ -308,6 +320,9 @@ export class MockRuntime extends EventEmitter {
 
 
 	public async getLocalVariables(variableHandles): Promise<IMockVariable[]> {
+		if (this._localVariables.length > 0) {
+			return this._localVariables;
+		}
 		this._localVariables = [];
 		this._messageSender.stdin.write(Buffer.from('info frame\n'));
 
@@ -375,6 +390,9 @@ export class MockRuntime extends EventEmitter {
 	}
 
 	public async getArgsVariables(variableHandles): Promise<IMockVariable[]> {
+		if (this._argsVariables.length > 0) {
+			return this._argsVariables;
+		}
 		this._messageSender.stdin.write(Buffer.from('info frame\n'));
 
 		const output: string = await new Promise((resolve) => {
@@ -442,6 +460,9 @@ export class MockRuntime extends EventEmitter {
 	}
 
 	public async getGlobalVariables(variableHandles) {
+		if (this._globalVariables.length > 0) {
+			return this._globalVariables;
+		}
 		this._messageSender.stdin.write(Buffer.from('help support\n'));
 		this._messageSender.stdin.write(Buffer.from('info variables\n'));
 
@@ -706,6 +727,12 @@ export class MockRuntime extends EventEmitter {
 
 	private result: IMockVariable | null = null;
 
+	private clearVariables() {
+		this._globalVariables = [];
+		this._localVariables = [];
+		this._argsVariables = [];
+	}
+
 	public evaluate(expression, index, variables: IMockVariable[]): IMockVariable | null {
 		if (index < variables.length) {
 			const currentVariable = variables[index];
@@ -718,7 +745,11 @@ export class MockRuntime extends EventEmitter {
 			index++;
 			this.evaluate(expression, index, variables);
 		}
+
 		return this.result;
+	}
+	public clearVariable() {
+		this.result = null;
 	}
 
 	public async stack() {
@@ -1128,7 +1159,7 @@ export class MockRuntime extends EventEmitter {
 
 		this._messageSender.stdout.on('data', async (data) => {
 
-			if (data.toString().includes('Failed to launch the device: Timeout')){
+			if (data.toString().includes('Failed to launch the device: Timeout')) {
 				this.restartSession('Failed to launch the device: Timeout');
 			}
 			if (data.toString().includes('Pausing execution')) {
@@ -1220,12 +1251,12 @@ export class MockRuntime extends EventEmitter {
 		return 'launched';
 
 	}
-	private restartSession(reason){
+	private restartSession(reason) {
 
 		//kill simulator
 		this._messageSender.stdin.write(Buffer.from('taskkill /f /t /im simulator.exe\n'));
 
-		this.sendEvent('restart',reason);
+		this.sendEvent('restart', reason);
 	}
 
 	private sendEvent(event: string, ...args: any[]) {

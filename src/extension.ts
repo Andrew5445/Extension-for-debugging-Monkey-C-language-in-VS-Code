@@ -17,6 +17,7 @@ import { glob } from 'glob';
 import { readFile, writeFile, createReadStream, readdirSync } from 'fs';
 import * as path from 'path';
 import { rejects } from 'assert';
+import { parseStringPromise } from 'xml2js';
 
 var fs = require("fs-extra");
 const readline = require('readline');
@@ -389,11 +390,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 					}
 					if (message.command === 'run-test-again') {
+						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath), { placeHolder: "Select Garmin device" });
 						let buffer;
 						const cmd = spawn('cmd', ['/K'], { shell: true });
 						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
 						cmd.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
-						cmd.stdin.write(Buffer.from('monkeyc -d d2bravo -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "c:\\Users\\ondre\\Desktop\\GARMIN SDK\\developer_key.der" -t\n'));
+						cmd.stdin.write(Buffer.from('monkeyc -d '+device+' -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "c:\\Users\\ondre\\Desktop\\GARMIN SDK\\developer_key.der" -t\n'));
 						cmd.stdin.write(Buffer.from('connectiq\n'));
 						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t ' + message.text + '\n'));
 						cmd.stdin.write(Buffer.from('###\n'));
@@ -485,11 +487,20 @@ export function activate(context: vscode.ExtensionContext) {
 
 					}
 					if (message.command === 'run-tests') {
+						let projectPath;
+						if (await vscode.commands.executeCommand('extension.mock-debug.getProjectPath') === undefined) {
+							vscode.commands.executeCommand('extension.mock-debug.config');
+							projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+						}
+						else {
+							projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+						}
+						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath), { placeHolder: "Select Garmin device" });
 						let buffer;
 						const cmd = spawn('cmd', ['/K'], { shell: true });
 						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
 						cmd.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
-						cmd.stdin.write(Buffer.from('monkeyc -d d2bravo -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "' + sdkPath + '\\developer_key.der" -t\n'));
+						cmd.stdin.write(Buffer.from('monkeyc -d ' + device + ' -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "' + sdkPath + '\\developer_key.der" -t\n'));
 						cmd.stdin.write(Buffer.from('connectiq\n'));
 						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\bin\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t\n'));
 						//cmd.stdin.write(Buffer.from('"C:\\Users\\ondre\\Desktop\\GARMIN%SDK\\connectiq-sdk-win-3.1.9-2020-06-24-1cc9d3a70\\bin\\monkeydo.bat" "C:\\Users\\ondre\\Desktop\\debuggerExtensionStart\\WATCHFACE\\bin\\WATCHFACE.prg" d2bravo /t\n'));
@@ -568,7 +579,7 @@ export function activate(context: vscode.ExtensionContext) {
 										console.log(files);
 									});
 
-									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', tests);
+									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', {tests});
 									//console.log(data_);
 									cmd.kill();
 									buffer = '';
@@ -600,7 +611,7 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 }
-function normalizePath(rawPath){
+function normalizePath(rawPath) {
 	return path.normalize(rawPath.charAt(1).toLowerCase() + path.normalize(rawPath).slice(2));
 }
 
@@ -610,18 +621,18 @@ function getWebviewContent() {
   <head>
 	  <meta charset="UTF-8">
 	  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-	  <title>Cat Coding</title>
+	  <title>Debug Config</title>
   </head>
   <body>
   	
 	  <h1 style="font-family:var(--vscode-editor-font-family);">Sdk path</h1>
-	  <input style="background-color:var(--vscode-input-background);color:var(--vscode-input-foreground);" type="text" id="sdkPath" name="sdkPath">
-	  <input style="background-color:var(--vscode-button-background);color:var(--vscode-button-foreground);" class="browseBttn vscode-dark" type="button" id="sdkPathBttn" name="sdkPathBttn" value="Browse">
+	  <input style="background-color:var(--vscode-input-background);color:var(--vscode-input-foreground);border-color: var(--vscode-inputOption-activeBorder);" type="text" id="sdkPath" name="sdkPath">
+	  <input style="background-color:var(--vscode-button-background);color:var(--vscode-button-foreground); margin-left:5px;border-color: var(--vscode-inputOption-activeBorder);" class="browseBttn vscode-dark" type="button" id="sdkPathBttn" name="sdkPathBttn" value="Browse">
 	  <h1 style="font-family:var(--vscode-editor-font-family);">Project path</h1>
-	  <input style="background-color:var(--vscode-input-background);color:var(--vscode-input-foreground);" type="text" id="projectPath" name="projectPath">
-	  <input style="background-color:var(--vscode-button-background);color:var(--vscode-button-foreground);" class="browseBttn" type="button" id="projectPathBttn" name="projectPathBttn" value="Browse">
+	  <input style="background-color:var(--vscode-input-background);color:var(--vscode-input-foreground);border-color: var(--vscode-inputOption-activeBorder);" type="text" id="projectPath" name="projectPath">
+	  <input style="background-color:var(--vscode-button-background);color:var(--vscode-button-foreground); margin-left:5px;border-color: var(--vscode-inputOption-activeBorder);" class="browseBttn" type="button" id="projectPathBttn" name="projectPathBttn" value="Browse">
 	  <br>
-	  <input style="background-color:var(--vscode-button-background);color:var(--vscode-button-foreground);" style="display:block;margin-top:20px;" type="submit" id="saveBttn" value="Save">
+	  <input style="background-color:var(--vscode-button-background);color:var(--vscode-button-foreground); margin-top:20px;border-color: var(--vscode-inputOption-activeBorder);" style="display:block;margin-top:20px;" type="submit" id="saveBttn" value="Save">
 	 
 	  <script>
 			  //const counter = document.getElementById('sdkPath');
@@ -713,20 +724,20 @@ function getUnitTestsWebviewContent() {
   </head>
   <body>
 	  
-	  <input type="button" id="runTestsBttn" name="runTestsBttn" value="Run unit tests">
+	  <input style = "background-color:var(--vscode-button-background);color:var(--vscode-button-foreground);font-family:var(--vscode-editor-font-family);margin-top:10px;border-color: var(--vscode-inputOption-activeBorder);" type="button" id="runTestsBttn" name="runTestsBttn" value="Run unit tests">
 	  
 	  <br>
 	  <br>
 	  
-	  <table id="unitTests" style="width:100%">
+	  <table id="unitTests" style="width:100%;border: 1px solid black;border-collapse: collapse;display:none;">
 	  <thead>
 	  <tr>
-	  <th>Name</th>
-	  <th>Result</th>
-	  <th>Assert</th>
-	  <th>Time of execution</th>
-	  <th>Location</th>
-	  <th></th>
+	  <th style="border: 1px solid black;border-collapse: collapse;">Name</th>
+	  <th style="border: 1px solid black;border-collapse: collapse;">Result</th>
+	  <th style="border: 1px solid black;border-collapse: collapse;">Assert</th>
+	  <th style="border: 1px solid black;border-collapse: collapse;">Time of execution</th>
+	  <th style="border: 1px solid black;border-collapse: collapse;">Location</th>
+	  <th style="border: 1px solid black;border-collapse: collapse;"></th>
 	</tr>
   </thead>
   <tbody>
@@ -739,7 +750,7 @@ function getUnitTestsWebviewContent() {
 				vscode.postMessage({
 					command: 'run-tests',
 					text: 'run tests'
-				})
+				});
 			  });
 			  
 			  document.addEventListener('click',function(e){
@@ -767,28 +778,60 @@ function getUnitTestsWebviewContent() {
 			const div=document.getElementById('unitTests').getElementsByTagName('tbody')[0];
             const message = event.data; // The JSON data our extension sent
 			const data=JSON.parse(message);
-			if (data.additionalInfo!== undefined){
-				document.getElementById(data.additionalInfo.name).getElementsByClassName('Location')[0].innerHTML='<a class="fileLink" style="cursor: pointer;text-decoration: underline;">'+data.additionalInfo.file+'</a>:'+'<span class="line">'+data.additionalInfo.line.toString()+'</span>';
+			console.log(data);
+			if (data.additionalInfo!==undefined){
+				document.getElementById(data.additionalInfo.name).getElementsByClassName('Location')[0].innerHTML='<a class="fileLink" style="cursor: pointer;text-decoration: underline; font-family:var(--vscode-editor-font-family);">'+data.additionalInfo.file+'</a>:'+'<span class="line">'+data.additionalInfo.line.toString()+'</span>';
 			}
-			data.forEach((x)=>{
-				const tableRow=document.getElementById(x.name);
-				if (tableRow!==undefined && tableRow!==null){
-					tableRow.innerHTML='<td style="text-align: center;">'+x.name+'</td> <td style="text-align: center;">'+x.result+'</td><td style="text-align: center;">'+x.assert+'</td> <td style="text-align: center;">'+x.time+'</td><td class="Location" style="text-align: center;"></td> <td style="text-align: center;"><input type="button" class="runAgain" id='+x.name+'-RunAgainBttn name="runAgain" value="Run again"></td>';
-				}
-				else{
-					div.innerHTML+='<tr id='+x.name+'><td style="text-align: center;">'+x.name+'</td> <td style="text-align: center;">'+x.result+'</td><td style="text-align: center;">'+x.assert+'</td> <td style="text-align: center;">'+x.time+'</td><td class="Location" style="text-align: center;"></td> <td style="text-align: center;"><input type="button" class="runAgain" id='+x.name+'-RunAgainBttn name="runAgain" value="Run again"></td></tr>';
-				}	
+			if (data.tests!==undefined){
+				data.tests.forEach((x)=>{
+					const tableRow=document.getElementById(x.name);
+					if (tableRow!==undefined && tableRow!==null){
+						tableRow.innerHTML='<td style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;">'+x.name+'</td> <td style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;">'+x.result+'</td><td style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;">'+x.assert+'</td> <td style="text-align: center;font-family:var(--vscode-editor-font-family);">'+x.time+'</td><td class="Location" style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;"></td> <td style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;"><input type="button" style="font-family:var(--vscode-editor-font-family);background-color:var(--vscode-button-background);color:var(--vscode-button-foreground);border-color: var(--vscode-inputOption-activeBorder);" class="runAgain" id='+x.name+'-RunAgainBttn name="runAgain" value="Run again"></td>';
+					}
+					else{
+						div.innerHTML+='<tr id='+x.name+'><td style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;">'+x.name+'</td> <td style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;">'+x.result+'</td><td style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;">'+x.assert+'</td> <td style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;">'+x.time+'</td><td class="Location" style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;"></td> <td style="text-align: center;font-family:var(--vscode-editor-font-family);border: 1px solid black;border-collapse: collapse;"><input type="button" style="font-family:var(--vscode-editor-font-family);background-color:var(--vscode-button-background);color:var(--vscode-button-foreground);border-color: var(--vscode-inputOption-activeBorder);" class="runAgain" id='+x.name+'-RunAgainBttn name="runAgain" value="Run again"></td></tr>';
+					}	
+							
 						
 					
-				
-				
-				
-			});
+					
+					
+				});
+				document.getElementById('unitTests').style.display='table';
+			}
+			
             
         });
 	  </script>
   </body>
   </html>`;
+}
+async function getAvailableDevices(projectFolder: string) {
+	let deviceList = [];
+	const manifestFile = glob.sync(projectFolder + '/**/manifest.xml');
+	if (manifestFile.length > 0) {
+		try {
+			const content = await fs.readFile(manifestFile[0]);
+			try {
+				const res = await parseStringPromise(content);
+				const devices = res["iq:manifest"]["iq:application"][0]["iq:products"][0]["iq:product"];
+				if (devices) {
+					return devices.map(x => x.$.id);
+
+				}
+			} catch (err) {
+				console.log(`Error occurred during parsing of manifest file contents: ${err}`);
+			}
+
+		} catch (err) {
+			console.log(`Error occured during reading of manifest file: ${err}`);
+		}
+
+
+
+	}
+	console.log();
+
 }
 
 
