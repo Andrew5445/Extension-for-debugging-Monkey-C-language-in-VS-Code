@@ -42,6 +42,7 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	trace?: boolean;
 	/** run without debugging */
 	noDebug?: boolean;
+
 }
 
 export class MockDebugSession extends LoggingDebugSession {
@@ -253,9 +254,32 @@ export class MockDebugSession extends LoggingDebugSession {
 
 	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
 
+
+
+		if (!args.projectPath) {
+			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+			if (!projectPath) {
+				vscode.window.showErrorMessage('Project path has not been selected.');
+				vscode.commands.executeCommand('extension.mock-debug.config');
+			}
+			if (projectPath) {
+				args.projectPath = projectPath as string;
+			}
+
+		}
+		if (!args.sdkPath) {
+			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
+			if (!sdkPath) {
+				vscode.window.showErrorMessage('Sdk path has not been selected.');
+				vscode.commands.executeCommand('extension.mock-debug.config');
+			}
+			if (sdkPath) {
+				args.sdkPath = sdkPath as string;
+			}
+		}
+
 		//show select device quick pick
 		const device = await vscode.window.showQuickPick(await this.getAvailableDevices(args.projectPath), { placeHolder: "Select Garmin device" });
-
 		if (device) {
 			this._launchDone = await this._runtime.start(args.program, args.sdkPath, args.projectPath, !args.stopOnEntry, !!args.noDebug, device!, this._launchDone, this._configurationDone);
 			logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
@@ -557,8 +581,8 @@ export class MockDebugSession extends LoggingDebugSession {
 		// 	// 	const childVariables=await this._runtime.evaluateExpression(expressionValue[0].name,this._variableHandles);
 
 		// 	// }
-		
-		
+
+
 		if (result) {
 			response.body = {
 				result: result.value!,
@@ -566,10 +590,10 @@ export class MockDebugSession extends LoggingDebugSession {
 			};
 		}
 		if (!result) {
-			
-			response.success=false;
-			response.message=`${args.expression} is not defined`;
-			
+
+			response.success = false;
+			response.message = `${args.expression} is not defined`;
+
 		}
 
 		this.sendResponse(response);

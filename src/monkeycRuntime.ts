@@ -1256,7 +1256,7 @@ export class MockRuntime extends EventEmitter {
 		//kill simulator
 		this._messageSender.stdin.write(Buffer.from('taskkill /f /t /im simulator.exe\n'));
 
-		this.sendEvent('restart', reason);
+		//this.sendEvent('restart', reason);
 	}
 
 	private sendEvent(event: string, ...args: any[]) {

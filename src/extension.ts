@@ -395,7 +395,7 @@ export function activate(context: vscode.ExtensionContext) {
 						const cmd = spawn('cmd', ['/K'], { shell: true });
 						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
 						cmd.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
-						cmd.stdin.write(Buffer.from('monkeyc -d '+device+' -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "c:\\Users\\ondre\\Desktop\\GARMIN SDK\\developer_key.der" -t\n'));
+						cmd.stdin.write(Buffer.from('monkeyc -d ' + device + ' -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "c:\\Users\\ondre\\Desktop\\GARMIN SDK\\developer_key.der" -t\n'));
 						cmd.stdin.write(Buffer.from('connectiq\n'));
 						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t ' + message.text + '\n'));
 						cmd.stdin.write(Buffer.from('###\n'));
@@ -579,7 +579,7 @@ export function activate(context: vscode.ExtensionContext) {
 										console.log(files);
 									});
 
-									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', {tests});
+									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { tests });
 									//console.log(data_);
 									cmd.kill();
 									buffer = '';
@@ -852,14 +852,13 @@ class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
 		// if launch.json is missing or empty
 		if (!config.type && !config.request && !config.name) {
 			const editor = vscode.window.activeTextEditor;
-			if (editor && (editor.document.languageId === 'markdown' || editor.document.languageId === 'monkeyc')) {
+			if (editor && editor.document.languageId === 'monkeyc') {
 				config.type = 'mock';
 				config.name = 'Launch';
 				config.request = 'launch';
 				config.program = '${file}';
 				config.workspaceFolder = '${workspaceFolder}';
 				config.stopOnEntry = true;
-				//	config.test = '${command:SelectDevice}';
 			}
 		}
 
