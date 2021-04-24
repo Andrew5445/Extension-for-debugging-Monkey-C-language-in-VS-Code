@@ -66,22 +66,14 @@
     "onCommand:extension.mock-debug.getProgramName",
     "onCommand:extension.mock-debug.runEditorContents",
     "onCommand:extension.mock-debug.debugEditorContents",
-    "onCommand:extension.mock-debug.config",
-    "onCommand:extension.mock-debug.UnitTests",
+    "onCommand:extension.monkeyc-debug.config",
+    "onCommand:extension.monkeyc-debug.UnitTests",
     "onCommand:extension.mock-debug.restartDebuggingSession",
-    "onCommand:extension.mock-debug.createProjectFromTemplate"
+    "onCommand:extension.monkeyc-debug.createProjectFromTemplate"
   ],
   "contributes": {
     "menus": {
       "commandPalette": [
-        {
-          "command": "extension.mock-debug.showErrorMessage",
-          "when": "false"
-        },
-        {
-          "command": "extension.mock-debug.sendMessageToWebView",
-          "when": "false"
-        }
       ],
       "editor/title": [
         {
@@ -118,40 +110,20 @@
         "title": "Show as Hex"
       },
       {
-        "command": "extension.mock-debug.config",
-        "title": "Monkey C debug config"
+        "command": "extension.monkeyc-debug.config",
+        "title": "Configure Monkey C debugger"
       },
       {
-        "command": "extension.mock-debug.getSdkPath",
-        "title": "Monkey C debug config"
-      },
-      {
-        "command": "extension.mock-debug.getProjectPath",
-        "title": "Connect IQ debug config"
-      },
-      {
-        "command": "extension.mock-debug.UnitTests",
+        "command": "extension.monkeyc-debug.UnitTests",
         "title": "Run Unit Tests"
       },
       {
-        "command": "extension.mock-debug.sendMessageToWebView",
-        "title": "Send message to panel webview"
+        "command": "extension.monkeyc-debug.sendMessageToWebView",
+        "title": "Send Message To Panel Webview"
       },
       {
-        "command": "extension.mock-debug.showErrorMessage",
-        "title": "Show error message"
-      },
-      {
-        "command": "extension.mock-debug.selectDevice",
-        "title": "Select garmin device"
-      },
-      {
-        "command": "extension.mock-debug.createProjectFromTemplate",
+        "command": "extension.monkeyc-debug.createProjectFromTemplatee",
         "title": "Create Connect IQ project from template"
-      },
-      {
-        "command": "extension.mock-debug.restartDebugSession",
-        "title": "Restart debug session"
       }
     ],
     "breakpoints": [
@@ -224,8 +196,7 @@
           }
         ],
         "variables": {
-          "AskForProgramName": "extension.mock-debug.getProgramName",
-          "SelectDevice": "extension.mock-debug.selectDevice"
+          "AskForProgramName": "extension.mock-debug.getProgramName"
         }
       }
     ]

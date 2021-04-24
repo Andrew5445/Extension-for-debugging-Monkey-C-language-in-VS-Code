@@ -99,14 +99,6 @@ export class MockDebugSession extends LoggingDebugSession {
 		this._runtime.on('stopOnDataBreakpoint', () => {
 			this.sendEvent(new StoppedEvent('data breakpoint', MockDebugSession.threadID));
 		});
-		this._runtime.on('restart', async (reason) => {
-
-			const restartSession = await vscode.window.showErrorMessage(`${reason}, would you like to restart the debug session?`, {}, "Yes", "No");
-			if (restartSession === 'Yes') {
-				vscode.commands.executeCommand('extension.mock-debug.restartDebugSession');
-			}
-			//return restartSession === 'Yes' ? vscode.commands.executeCommand('restartDebugSession') : null;
-		});
 		this._runtime.on('stopOnException', (message) => {
 			this.sendEvent(new StoppedEvent(`exception`, MockDebugSession.threadID, message));
 		});
@@ -169,7 +161,7 @@ export class MockDebugSession extends LoggingDebugSession {
 
 		this._runtime.on('error', (message) => {
 			this.sendEvent(new TerminatedEvent());
-			vscode.commands.executeCommand('extension.mock-debug.showErrorMessage', message);
+			vscode.window.showErrorMessage(message);
 		});
 
 		this._configurationDone.notified = false;
@@ -255,27 +247,23 @@ export class MockDebugSession extends LoggingDebugSession {
 	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
 
 
-
+		//resolve config paths
 		if (!args.projectPath) {
-			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
-			if (!projectPath) {
-				vscode.window.showErrorMessage('Project path has not been selected.');
-				vscode.commands.executeCommand('extension.mock-debug.config');
-			}
-			if (projectPath) {
-				args.projectPath = projectPath as string;
-			}
+			args.projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath') as string;
 
 		}
 		if (!args.sdkPath) {
-			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
-			if (!sdkPath) {
+			args.sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath') as string;
+
+		}
+		if (!args.projectPath || !args.sdkPath) {
+			if (!args.sdkPath) {
 				vscode.window.showErrorMessage('Sdk path has not been selected.');
-				vscode.commands.executeCommand('extension.mock-debug.config');
 			}
-			if (sdkPath) {
-				args.sdkPath = sdkPath as string;
+			if (!args.projectPath) {
+				vscode.window.showErrorMessage('Project path has not been selected.');
 			}
+			vscode.commands.executeCommand('extension.monkeyc-debug.config');
 		}
 
 		//show select device quick pick
@@ -292,13 +280,13 @@ export class MockDebugSession extends LoggingDebugSession {
 		this.sendResponse(response);
 	}
 
-	protected async restartRequest(response: DebugProtocol.RestartResponse, args: DebugProtocol.RestartArguments) {
+	// protected async restartRequest(response: DebugProtocol.RestartResponse, args: DebugProtocol.RestartArguments) {
 
-		console.log('Debug session restarted!');
+	// 	console.log('Debug session restarted!');
 
-		this.sendResponse(response);
+	// 	this.sendResponse(response);
 
-	}
+	// }
 
 	protected async setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments) {
 
@@ -307,10 +295,6 @@ export class MockDebugSession extends LoggingDebugSession {
 		if (this._launchDone) {
 			await this._launchDone.wait();
 		}
-		// else if (this._executionPaused){
-		// 	await this._executionPaused.wait();
-		// 	this._executionPaused=null;
-		// }
 
 		const path = args.source.path as string;
 		const clientLines = args.lines || [];
@@ -524,64 +508,8 @@ export class MockDebugSession extends LoggingDebugSession {
 
 	protected async evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments) {
 
-		// const variables: DebugProtocol.Variable[] = [];
-		// // let actualVariables: IMockVariable[] = [];
-		//const res;
-		// //this.customRequest('variables',)
-		// const expressionValue=await (await this._runtime.evaluateExpression('self', this._variableHandles)).concat(await this._runtime.getLocalVariables(this._variableHandles)).filter(x => x.name === args.expression);
 		const result = this._runtime.evaluate(args.expression, 0, this._runtime.localVariables.concat(this._runtime.argsVariables).concat(this._runtime.globalVariables));
 		this._runtime.clearVariable();
-
-		// const key = Object.keys(this._variableHandles.get()).find(key => this._variableHandles[key] === args.expression);
-		// console.log(args);
-		// //await expressionValue=this._runtime.evaluate(args.context,args.expression);
-		// //	const expressionValue = this._runtime.localVariables.concat(this._runtime.globalVariables).filter(x => x.name === args.expression);
-		//const reply = result ? result : undefined;
-
-
-
-
-
-
-		//const result=args.
-		// if (args.context === 'repl') {
-		// 	// 'evaluate' supports to create and delete breakpoints from the 'repl':
-		// 	const matches = /new +([0-9]+)/.exec(args.expression);
-		// 	if (matches && matches.length === 2) {
-		// 		const mbp = this._runtime.setBreakPoint(this._runtime.sourceFile, this.convertClientLineToDebugger(parseInt(matches[1])));
-		// 		const bp = new Breakpoint(mbp.verified, this.convertDebuggerLineToClient(mbp.line), undefined, this.createSource(this._runtime.sourceFile)) as DebugProtocol.Breakpoint;
-		// 		bp.id= mbp.id;
-		// 		this.sendEvent(new BreakpointEvent('new', bp));
-		// 		reply = `breakpoint created`;
-		// 	} else {
-		// 		const matches = /del +([0-9]+)/.exec(args.expression);
-		// 		if (matches && matches.length === 2) {
-		// 			const mbp = this._runtime.clearBreakPoint(this._runtime.sourceFile, this.convertClientLineToDebugger(parseInt(matches[1])));
-		// 			if (mbp) {
-		// 				const bp = new Breakpoint(false) as DebugProtocol.Breakpoint;
-		// 				bp.id= mbp.id;
-		// 				this.sendEvent(new BreakpointEvent('removed', bp));
-		// 				reply = `breakpoint deleted`;
-		// 			}
-		// 		} else {
-		// 			const matches = /progress/.exec(args.expression);
-		// 			if (matches && matches.length === 1) {
-		// 				if (this._reportProgress) {
-		// 					reply = `progress started`;
-		// 					this.progressSequence();
-		// 				} else {
-		// 					reply = `frontend doesn't support progress (capability 'supportsProgressReporting' not set)`;
-		// 				}
-		// 			}
-		// 		}
-		// 	}
-		// }
-		// if (expressionValue){
-		// 	// if (expressionValue[0].variablesReference>0){
-		// 	// 	const childVariables=await this._runtime.evaluateExpression(expressionValue[0].name,this._variableHandles);
-
-		// 	// }
-
 
 		if (result) {
 			response.body = {
@@ -599,38 +527,6 @@ export class MockDebugSession extends LoggingDebugSession {
 		this.sendResponse(response);
 	}
 
-
-
-	// private async progressSequence() {
-
-	// 	const ID = '' + this._progressId++;
-
-	// 	await timeout(100);
-
-	// 	const title = this._isProgressCancellable ? 'Cancellable operation' : 'Long running operation';
-	// 	const startEvent: DebugProtocol.ProgressStartEvent = new ProgressStartEvent(ID, title);
-	// 	startEvent.body.cancellable = this._isProgressCancellable;
-	// 	this._isProgressCancellable = !this._isProgressCancellable;
-	// 	this.sendEvent(startEvent);
-	// 	this.sendEvent(new OutputEvent(`start progress: ${ID}\n`));
-
-	// 	let endMessage = 'progress ended';
-
-	// 	for (let i = 0; i < 100; i++) {
-	// 		await timeout(500);
-	// 		this.sendEvent(new ProgressUpdateEvent(ID, `progress: ${i}`));
-	// 		if (this._cancelledProgressId === ID) {
-	// 			endMessage = 'progress cancelled';
-	// 			this._cancelledProgressId = undefined;
-	// 			this.sendEvent(new OutputEvent(`cancel progress: ${ID}\n`));
-	// 			break;
-	// 		}
-	// 	}
-	// 	this.sendEvent(new ProgressEndEvent(ID, endMessage));
-	// 	this.sendEvent(new OutputEvent(`end progress: ${ID}\n`));
-
-	// 	this._cancelledProgressId = undefined;
-	// }
 
 	protected dataBreakpointInfoRequest(response: DebugProtocol.DataBreakpointInfoResponse, args: DebugProtocol.DataBreakpointInfoArguments): void {
 
@@ -754,7 +650,6 @@ export class MockDebugSession extends LoggingDebugSession {
 
 
 		}
-		console.log();
 
 	}
 }

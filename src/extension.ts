@@ -78,26 +78,18 @@ export function activate(context: vscode.ExtensionContext) {
 	));
 
 	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.mock-debug.restartDebugSession',
-		() => {
-			vscode.debug.activeDebugSession?.customRequest('restart');
-		}
-
-	));
-
-	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.mock-debug.createProjectFromTemplate',
+		'extension.monkeyc-debug.createProjectFromTemplate',
 		async () => {
 
 			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
 			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
 			if (!sdkPath) {
 				vscode.window.showErrorMessage('No templates found, please select sdk path in the debugger config.');
-				vscode.commands.executeCommand('extension.mock-debug.config');
+				vscode.commands.executeCommand('extension.monkeyc-debug.config');
 			}
 			if (!projectPath) {
 				vscode.window.showErrorMessage('Project path not found.');
-				vscode.commands.executeCommand('extension.mock-debug.config');
+				vscode.commands.executeCommand('extension.monkeyc-debug.config');
 			}
 			else {
 
@@ -176,7 +168,7 @@ export function activate(context: vscode.ExtensionContext) {
 	));
 
 	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.mock-debug.sendMessageToWebView',
+		'extension.monkeyc-debug.sendMessageToWebView',
 		(data) => {
 			if (!currentPanel) {
 				return;
@@ -188,16 +180,6 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 	));
-
-	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.mock-debug.selectDevice',
-		(projectFolder) => {
-			vscode.window.showQuickPick(["test1", "test2", "test3"]);
-		}
-
-	));
-
-
 
 	context.subscriptions.push(vscode.commands.registerCommand('extension.mock-debug.getProgramName', config => {
 		return vscode.window.showInputBox({
@@ -275,7 +257,7 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 	*/
 	context.subscriptions.push(
-		vscode.commands.registerCommand('extension.mock-debug.config', async () => {
+		vscode.commands.registerCommand('extension.monkeyc-debug.config', async () => {
 			currentPanel = vscode.window.createWebviewPanel(
 				'debug Config',
 				'Debug Config',
@@ -291,10 +273,10 @@ export function activate(context: vscode.ExtensionContext) {
 			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
 			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
 			if (sdkPath) {
-				vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { sdkPath });
+				vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', { sdkPath });
 			}
 			if (projectPath) {
-				vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { projectPath });
+				vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', { projectPath });
 			}
 
 			// Handle messages from the webview
@@ -332,7 +314,7 @@ export function activate(context: vscode.ExtensionContext) {
 						case 'openBrowseDialog':
 							vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true }).then(fileUri => {
 								if (fileUri) {
-									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { path: normalizePath(fileUri[0].path), id: message.text.startsWith('sdkPath') ? 'sdkPath' : 'projectPath' });
+									vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', { path: normalizePath(fileUri[0].path), id: message.text.startsWith('sdkPath') ? 'sdkPath' : 'projectPath' });
 								}
 
 
@@ -349,7 +331,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('extension.mock-debug.UnitTests', () => {
+		vscode.commands.registerCommand('extension.monkeyc-debug.UnitTests', () => {
 			currentPanel = vscode.window.createWebviewPanel(
 				'unit tests',
 				'Unit tests',
@@ -364,17 +346,20 @@ export function activate(context: vscode.ExtensionContext) {
 			// Handle messages from the webview
 			currentPanel.webview.onDidReceiveMessage(
 				async message => {
-					let sdkPath;
-					let projectPath;
-					if (await vscode.commands.executeCommand('extension.mock-debug.getSdkPath') === undefined || await vscode.commands.executeCommand('extension.mock-debug.getProjectPath') === undefined) {
-						vscode.commands.executeCommand('extension.mock-debug.config');
-						sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
-						projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+					let sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
+					let projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+					if (!sdkPath || !projectPath) {
+						if (!sdkPath) {
+							vscode.window.showErrorMessage('Sdk path has not been selected.');
+						}
+						if (!projectPath) {
+							vscode.window.showErrorMessage('Project path has not been selected.');
+						}
+
+						vscode.commands.executeCommand('extension.monkeyc-debug.config');
+
 					}
-					else {
-						sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
-						projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
-					}
+
 					if (message.command === 'open-file') {
 						const uri = vscode.Uri.file(message.link);
 						const pos = new vscode.Position(Number(message.line), 0);
@@ -390,7 +375,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 					}
 					if (message.command === 'run-test-again') {
-						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath), { placeHolder: "Select Garmin device" });
+						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath as string), { placeHolder: "Select Garmin device" });
 						let buffer;
 						const cmd = spawn('cmd', ['/K'], { shell: true });
 						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
@@ -460,7 +445,7 @@ export function activate(context: vscode.ExtensionContext) {
 															}
 
 														};
-														vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', additionalInfoObj);
+														vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', additionalInfoObj);
 													}
 												});
 
@@ -469,7 +454,7 @@ export function activate(context: vscode.ExtensionContext) {
 										});
 										console.log(files);
 									});
-									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', tests);
+									vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', tests);
 									//console.log(data_);
 									cmd.kill();
 									buffer = '';
@@ -487,15 +472,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 					}
 					if (message.command === 'run-tests') {
-						let projectPath;
-						if (await vscode.commands.executeCommand('extension.mock-debug.getProjectPath') === undefined) {
-							vscode.commands.executeCommand('extension.mock-debug.config');
-							projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
-						}
-						else {
-							projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
-						}
-						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath), { placeHolder: "Select Garmin device" });
+
+						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath as string), { placeHolder: "Select Garmin device" });
 						let buffer;
 						const cmd = spawn('cmd', ['/K'], { shell: true });
 						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
@@ -569,7 +547,7 @@ export function activate(context: vscode.ExtensionContext) {
 															}
 
 														};
-														vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', additionalInfoObj);
+														vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', additionalInfoObj);
 													}
 												});
 
@@ -579,7 +557,7 @@ export function activate(context: vscode.ExtensionContext) {
 										console.log(files);
 									});
 
-									vscode.commands.executeCommand('extension.mock-debug.sendMessageToWebView', { tests });
+									vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', { tests });
 									//console.log(data_);
 									cmd.kill();
 									buffer = '';
@@ -847,8 +825,6 @@ class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
 	 */
 	resolveDebugConfiguration(folder: WorkspaceFolder | undefined, config: DebugConfiguration, token?: CancellationToken): ProviderResult<DebugConfiguration> {
 
-
-		//config.test = '${command:SelectDevice}';
 		// if launch.json is missing or empty
 		if (!config.type && !config.request && !config.name) {
 			const editor = vscode.window.activeTextEditor;
