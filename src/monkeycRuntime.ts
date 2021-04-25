@@ -1159,8 +1159,8 @@ export class MockRuntime extends EventEmitter {
 
 		this._messageSender.stdout.on('data', async (data) => {
 
-			if (data.toString().includes('Failed to launch the device: Timeout')) {
-				this.killSimulator('Failed to launch the device: Timeout...simulator has been killed');
+			if (data.toString().includes('Failed to launch the device: Timeout') || data.toString().includes('Failed to launch the app: Timeout')) {
+				this.killSimulator('Failed to launch the device: Timeout');
 			}
 			if (data.toString().includes('Pausing execution')) {
 				this.sendEvent('pauseProgramExecution');
@@ -1256,7 +1256,7 @@ export class MockRuntime extends EventEmitter {
 		//kill simulator
 		this._messageSender.stdin.write(Buffer.from('taskkill /f /t /im simulator.exe\n'));
 
-		//this.sendEvent('restart', reason);
+		this.sendEvent('error', reason);
 	}
 
 	private sendEvent(event: string, ...args: any[]) {
