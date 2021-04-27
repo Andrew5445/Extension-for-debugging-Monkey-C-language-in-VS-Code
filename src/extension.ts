@@ -11,12 +11,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { platform } from 'process';
 import { WorkspaceFolder, DebugConfiguration, ProviderResult, CancellationToken } from 'vscode';
-import { MockDebugSession } from './monkeycDebug';
+import { MonkeycDebugSession } from './monkeycDebug';
 import { spawn } from 'child_process';
 import { glob } from 'glob';
 import { readFile, writeFile, createReadStream, readdirSync } from 'fs';
 import * as path from 'path';
-import { rejects } from 'assert';
 import { parseStringPromise } from 'xml2js';
 
 var fs = require("fs-extra");
@@ -93,12 +92,10 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 			else {
 
-				//const templatesPath = `${sdkPath}\\bin\\templates`;
 				const getDirectories = source =>
 					readdirSync(source, { withFileTypes: true })
 						.filter(dirent => dirent.isDirectory())
 						.map(dirent => dirent.name);
-				//const p = glob.sync(`${sdkPath}/bin/templates*/`);
 				const projectName = await vscode.window.showInputBox({ placeHolder: 'Set Project Name' });
 				const type = await vscode.window.showQuickPick(await getDirectories(`${sdkPath}\\bin\\templates`), { placeHolder: "Select a project type" });
 				const templates = await getDirectories(`${sdkPath}\\bin\\templates\\${type}`);
@@ -120,7 +117,6 @@ export function activate(context: vscode.ExtensionContext) {
 						return new Promise(async (resolve, token) => {
 
 							//copy template contents
-							//Promise.all()
 							try {
 								await fs.copy(`${sdkPath}\\bin\\templates\\${type}\\${template}`, projectPath);
 							}
@@ -143,15 +139,10 @@ export function activate(context: vscode.ExtensionContext) {
 								resolve("Done.");
 							});
 
-							//update source files
-
-
 						});
 					});
 
 				}
-				//console.log(getDirectories(templatesPath));
-				console.log();
 
 			}
 		}
@@ -284,17 +275,13 @@ export function activate(context: vscode.ExtensionContext) {
 				message => {
 					switch (message.command) {
 						case 'data':
-
-							//const pp=path.normalize(message.text.split(' ')[1])
-							//const sdkPath = path.normalize(message.text.split('~')[0]).charAt(1).toLowerCase() + path.normalize(message.text.split('~')[0]).slice(2);
 							const sdkPath = message.text.split('~')[0];
 							const projectPath = message.text.split('~')[1];
-							//const projectPath = path.normalize(message.text.split('~')[1]).charAt(1).toLowerCase() + path.normalize(message.text.split('~')[1]).slice(2);
-							//
 							context.globalState.update('sdkPath', sdkPath);
 							context.globalState.update('projectPath', projectPath);
 
 							const launchFile: string[] = glob.sync(projectPath + '/**/.vscode/launch.json');
+
 							//update launch.json
 							readFile(launchFile[0], 'utf8', function readFileCallback(err, data) {
 								if (err) {
@@ -304,7 +291,6 @@ export function activate(context: vscode.ExtensionContext) {
 
 									obj.configurations[0].sdkPath = sdkPath;
 									obj.configurations[0].projectPath = projectPath;
-									// obj.table.push({id: 2, square:3}); //add some data
 									let json = JSON.stringify(obj); //convert it back to json
 									writeFile(launchFile[0], json, 'utf8', () => { }); // write it back 
 								}
@@ -363,7 +349,6 @@ export function activate(context: vscode.ExtensionContext) {
 					if (message.command === 'open-file') {
 						const uri = vscode.Uri.file(message.link);
 						const pos = new vscode.Position(Number(message.line), 0);
-						//const line:string=message.line;
 						vscode.window.showTextDocument(uri).then(editor => {
 							// Line added - by having a selection at the same position twice, the cursor jumps there
 							editor.selections = [new vscode.Selection(pos, pos)];
@@ -464,9 +449,6 @@ export function activate(context: vscode.ExtensionContext) {
 								}
 							}
 
-
-
-
 						});
 
 
@@ -481,12 +463,10 @@ export function activate(context: vscode.ExtensionContext) {
 						cmd.stdin.write(Buffer.from('monkeyc -d ' + device + ' -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "' + sdkPath + '\\developer_key.der" -t\n'));
 						cmd.stdin.write(Buffer.from('connectiq\n'));
 						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\bin\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t\n'));
-						//cmd.stdin.write(Buffer.from('"C:\\Users\\ondre\\Desktop\\GARMIN%SDK\\connectiq-sdk-win-3.1.9-2020-06-24-1cc9d3a70\\bin\\monkeydo.bat" "C:\\Users\\ondre\\Desktop\\debuggerExtensionStart\\WATCHFACE\\bin\\WATCHFACE.prg" d2bravo /t\n'));
 						cmd.stdin.write(Buffer.from('###\n'));
-						//cmd.stdin.write(Buffer.from('simulator & [1] 27984\n'));
 						cmd.stdout.on('data', async (data) => {
+
 							const tests: UnitTest[] = [];
-							//	const data_ = data.toString();
 							buffer += data;
 							console.log(buffer);
 
@@ -554,11 +534,9 @@ export function activate(context: vscode.ExtensionContext) {
 											}
 
 										});
-										console.log(files);
 									});
 
 									vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', { tests });
-									//console.log(data_);
 									cmd.kill();
 									buffer = '';
 								}
@@ -567,12 +545,7 @@ export function activate(context: vscode.ExtensionContext) {
 								}
 							}
 
-
-
-
 						});
-
-
 
 					}
 				},
@@ -887,7 +860,7 @@ class MockDebugAdapterServerDescriptorFactory implements vscode.DebugAdapterDesc
 		if (!this.server) {
 			// start listening on a random port
 			this.server = Net.createServer(socket => {
-				const session = new MockDebugSession();
+				const session = new MonkeycDebugSession();
 				session.setRunAsServer(true);
 				session.start(socket as NodeJS.ReadableStream, socket);
 			}).listen(0);
@@ -916,7 +889,7 @@ class MockDebugAdapterNamedPipeServerDescriptorFactory implements vscode.DebugAd
 			const pipePath = platform === "win32" ? join('\\\\.\\pipe\\', pipeName) : join(tmpdir(), pipeName);
 
 			this.server = Net.createServer(socket => {
-				const session = new MockDebugSession();
+				const session = new MonkeycDebugSession();
 				session.setRunAsServer(true);
 				session.start(<NodeJS.ReadableStream>socket, socket);
 			}).listen(pipePath);
@@ -938,6 +911,6 @@ class MockDebugAdapterNamedPipeServerDescriptorFactory implements vscode.DebugAd
 class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
 
 	createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
-		return new vscode.DebugAdapterInlineImplementation(new MockDebugSession());
+		return new vscode.DebugAdapterInlineImplementation(new MonkeycDebugSession());
 	}
 }

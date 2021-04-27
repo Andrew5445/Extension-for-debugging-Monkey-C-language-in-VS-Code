@@ -2,6 +2,6 @@
  * Copyright (C) Microsoft Corporation. All rights reserved.
  *--------------------------------------------------------*/
 
- import { MockDebugSession } from './monkeycDebug';
+ import { MonkeycDebugSession } from './monkeycDebug';
 
- MockDebugSession.run(MockDebugSession);
+ MonkeycDebugSession.run(MonkeycDebugSession);

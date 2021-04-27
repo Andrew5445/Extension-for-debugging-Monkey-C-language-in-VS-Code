@@ -8,8 +8,6 @@ import { spawn } from 'child_process';
 import { DebuggerListener } from './debuggerListener';
 import { glob } from 'glob';
 import * as path from 'path';
-import { match } from 'assert';
-import { ThemeIcon } from 'vscode';
 
 export interface IMockBreakpoint {
 	id: number;
@@ -150,9 +148,6 @@ export class MockRuntime extends EventEmitter {
 			await configurationDone.wait();
 		}
 
-		//this.verifyBreakpoints(this._sourceFile);
-
-
 		this.continue();
 
 
@@ -248,10 +243,6 @@ export class MockRuntime extends EventEmitter {
 
 	}
 
-	// public waitForLaunchDone(resolve){
-	// 	if (this._launchDone === true) { return resolve(); }
-	// 	else { setTimeout(this.launchDoneNotify, 30); }
-	// }
 	/**
 	 * "Step into" for Mock debug means: go to next character
 	 */
@@ -415,10 +406,6 @@ export class MockRuntime extends EventEmitter {
 								this._argsVariables.push({ name: variableInfo[1], value: variableInfo[2], type: 'undefined', variablesReference: 0, children: [] });
 							}
 							else {
-								// if (!variableInfo[2].split(' ')[1].includes('Object') && !variableInfo[2].split(' ')[1].includes('Circle') && !variableInfo[2].split(' ')[1].includes('Lang.Array')) {
-								// 	this._localVariables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), variablesReference: 0, children: [] });
-								// }
-								// else {
 
 								this._messageSender.stdin.write(Buffer.from('print ' + variableInfo[1] + ' \n'));
 								const output: string = await new Promise((resolve) => {
@@ -435,7 +422,6 @@ export class MockRuntime extends EventEmitter {
 										this.index = 2;
 									}
 
-									//const indentation=variableInfo[2].split(' ')[1].includes('Lang.Array')?4:2;
 									const variable: IMockVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
 									this.parseChildVariables(output.split('\n'), indentation, variable.children, variableHandles);
 									this._argsVariables.push(variable);
@@ -484,10 +470,6 @@ export class MockRuntime extends EventEmitter {
 							this._globalVariables.push({ name: variableInfo[1], value: variableInfo[2], type: 'undefined', variablesReference: 0, children: [] });
 						}
 						else {
-							// if (!variableInfo[2].split(' ')[1].includes('Object') && !variableInfo[2].split(' ')[1].includes('Circle') && !variableInfo[2].split(' ')[1].includes('Lang.Array')) {
-							// 	this._localVariables.push({ name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), variablesReference: 0, children: [] });
-							// }
-							// else {
 
 							this._messageSender.stdin.write(Buffer.from('print ' + variableInfo[1] + ' \n'));
 							const output: string = await new Promise((resolve) => {
@@ -505,7 +487,6 @@ export class MockRuntime extends EventEmitter {
 									this.index = 2;
 								}
 
-								//const indentation=variableInfo[2].split(' ')[1].includes('Lang.Array')?4:2;
 								const variable: IMockVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
 								this.parseChildVariables(output.split('\n'), indentation, variable.children, variableHandles);
 								this._globalVariables.push(variable);
@@ -522,8 +503,6 @@ export class MockRuntime extends EventEmitter {
 				}
 
 			}));
-
-			//this._localVariables=_localVariables;
 
 			return this._globalVariables;
 
@@ -559,7 +538,7 @@ export class MockRuntime extends EventEmitter {
 
 
 			let currentIndentation;
-			//const info = lines[this.index].split(' ');
+
 			const varInfo = lines[this.index].trim().split(' ');
 
 			//get indentation
@@ -595,20 +574,15 @@ export class MockRuntime extends EventEmitter {
 
 
 					//handle string var
-
 					switch (variable.type) {
 						case 'Lang.String':
 							variable.name = variable.name.replace(/[[]|\]/g, '');
-							//variable.variablesReference = variableHandles.create(varTypeAndMemoryAddress[0]);
 							this.index += 2;
-							//variable.children.push({ name: lines[this.index].trim().split(' ')[0], value: lines[this.index].trim().split(' ')[2], variablesReference: 0, children: [], type: undefined });
-							//this.index += 1;
 							variable.value = lines[this.index].trim().replace(/[,]/g, '');
 							variables.push(variable);
 
 							break;
 						case 'Lang.Array':
-							//currentIndentation=lines[this.index].split(' ').length-2;
 							variable.name = variable.name.replace(/[[]|\]/g, '');
 							variable.value = varTypeAndReference[0];
 							variable.variablesReference = variableHandles.create(varTypeAndReference[0]);
@@ -712,6 +686,7 @@ export class MockRuntime extends EventEmitter {
 	private childrenVariables: IMockVariable[] = [];
 
 	public getChildVariables(variablesReference, index, variables: IMockVariable[]): IMockVariable[] {
+
 		if (index < variables.length) {
 			const currentVariable = variables[index];
 			if (currentVariable.variablesReference === variablesReference) {
@@ -738,7 +713,6 @@ export class MockRuntime extends EventEmitter {
 			const currentVariable = variables[index];
 			if (currentVariable.name === expression) {
 				this.result = currentVariable;
-				//this.childrenVariables = currentVariable.children;
 			} else if (currentVariable.children.length > 0) {
 				this.evaluate(expression, 0, currentVariable.children);
 			}
@@ -769,20 +743,6 @@ export class MockRuntime extends EventEmitter {
 					count: 1
 				};
 			}
-			// if (/ERROR:.+/.test(this._errorLog)) {
-			// 	const stackInfo = this._errorLog.match(/.+ERROR: (.*): /s)[1].trim().split(' ');
-			// 	const stackFrame: IStackFrame = {
-			// 		index: 1,
-			// 		name: stackInfo[1],
-			// 		file: stackInfo[3].match(/(.+mc).+/)[1],
-			// 		line: Number(stackInfo[3].match(/.+mc:([0-9]+)/)[1])
-			// 	};
-			// 	frames.push(stackFrame);
-			// 	return {
-			// 		frames: frames,
-			// 		count: 1
-			// 	};
-			// }
 			return undefined;
 		}
 		else {
@@ -797,7 +757,6 @@ export class MockRuntime extends EventEmitter {
 			if (frameInfo) {
 				let _frameInfo;
 				let stackFrame;
-				//const currentFrameInfo = frameInfoLines[0].match(/#([0-9]+)\s+(.+) at (.+):([0-9]+)/);
 				frameInfoLines.forEach((line) => {
 
 					if (/#([0-9]+)\s+(.+) in (.*) at (.+):([0-9]+)/.test(line)) {
@@ -831,25 +790,6 @@ export class MockRuntime extends EventEmitter {
 					count: 0
 				};
 			}
-			// const info = frameInfo.match(/Stack level ([0-9]+)(?:.|\n|\r)*in (.*) at (.*):([0-9]+)/);
-			// if (info) {
-
-			// 	const stackFrame: IStackFrame = {
-			// 		index: Number(info[1]),
-			// 		name: info[2],
-			// 		file: this.getFileFullPath(info[3]),
-			// 		line: Number(info[4])
-			// 	};
-			// 	frames.push(stackFrame);
-			// 	return {
-			// 		frames: frames,
-			// 		count: 1
-			// 	};
-			// }
-
-			// else {
-
-			//}
 		}
 
 
@@ -946,19 +886,6 @@ export class MockRuntime extends EventEmitter {
 				return error;
 			}
 
-			//compile error
-			// if (!/ERROR:.+/.test(this._errorLog)) {
-			// 	const error: IError = {
-			// 		id: '1',
-			// 		description: this._errorLog.match(/.+Error:(.+)\nDetails.+/s)[1].trim(),
-			// 		details: {
-			// 			message: this._errorLog.match(/.+Details:(.+)\nStack.+/s)[1].trim(),
-			// 			stackTrace: this._errorLog.match(/.+Stack: \n  -(.+)\n\nEncountered app crash.+/s)[1].trim()
-			// 		}
-			// 	};
-			// 	return error;
-			// }
-
 		}
 		return undefined;
 	}
@@ -966,9 +893,9 @@ export class MockRuntime extends EventEmitter {
 	 * Clear all breakpoints for file.
 	 */
 	public clearBreakpoints(path: string): void {
+
 		this.clearBreakPointsDebugger(path);
 		this._breakPoints.delete(path);
-
 
 	}
 
@@ -1065,8 +992,6 @@ export class MockRuntime extends EventEmitter {
 
 				//skip breakpoint if not verified
 				if (!bps[0].verified) {
-					// bps[0].verified = true;
-					// this.sendEvent('breakpointValidated', bps[0]);
 					return false;
 				}
 				// send 'stopped' event
@@ -1165,8 +1090,6 @@ export class MockRuntime extends EventEmitter {
 			if (data.toString().includes('Pausing execution')) {
 				this.sendEvent('pauseProgramExecution');
 			}
-			//handle compile errors
-			//if ()
 
 			//handle debugger crash
 			if (data.toString().includes('Failed to get stack backtrace: Timeout')) {
@@ -1185,7 +1108,6 @@ export class MockRuntime extends EventEmitter {
 			//handle fatal errors
 
 			if (/.+Error:.+Details:.+Stack:.+Encountered app crash.+/s.test(this._buffer)) {
-				//this.parseError(data.toString());
 				this._errorLog += this._buffer;
 				this.sendEvent('stopOnException', this._buffer);
 			}
@@ -1194,10 +1116,7 @@ export class MockRuntime extends EventEmitter {
 
 			console.log("buffer: " + this._buffer);
 
-			//this.testBuffer += data;
-
 			let outputLines: string[] = this._buffer.split("(mdd) ");
-
 
 			outputLines = outputLines.filter((el) => { return el.length !== 0; });
 			if (outputLines.length > 0) {

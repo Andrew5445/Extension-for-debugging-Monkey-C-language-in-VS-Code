@@ -45,7 +45,7 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 
 }
 
-export class MockDebugSession extends LoggingDebugSession {
+export class MonkeycDebugSession extends LoggingDebugSession {
 
 	// we don't support multiple threads, so we can use a hardcoded ID for the default thread
 	private static threadID = 1;
@@ -65,13 +65,9 @@ export class MockDebugSession extends LoggingDebugSession {
 
 	private _programExecuting = false;
 
-	//private _cancelationTokens = new Map<number, boolean>();
-	// private _isLongrunning = new Map<number, boolean>();
-
 	private _reportProgress = false;
+
 	private _progressId = 10000;
-	// private _cancelledProgressId: string | undefined = undefined;
-	// private _isProgressCancellable = true;
 
 	/**
 	 * Creates a new debug adapter that is used for one debug session.
@@ -88,31 +84,27 @@ export class MockDebugSession extends LoggingDebugSession {
 
 		// setup event handlers
 		this._runtime.on('stopOnEntry', () => {
-			this.sendEvent(new StoppedEvent('entry', MockDebugSession.threadID));
+			this.sendEvent(new StoppedEvent('entry', MonkeycDebugSession.threadID));
 		});
 		this._runtime.on('stopOnStep', () => {
-			this.sendEvent(new StoppedEvent('step', MockDebugSession.threadID));
+			this.sendEvent(new StoppedEvent('step', MonkeycDebugSession.threadID));
 		});
 		this._runtime.on('stopOnBreakpoint', () => {
-			this.sendEvent(new StoppedEvent('breakpoint', MockDebugSession.threadID));
+			this.sendEvent(new StoppedEvent('breakpoint', MonkeycDebugSession.threadID));
 		});
 		this._runtime.on('stopOnDataBreakpoint', () => {
-			this.sendEvent(new StoppedEvent('data breakpoint', MockDebugSession.threadID));
+			this.sendEvent(new StoppedEvent('data breakpoint', MonkeycDebugSession.threadID));
 		});
 		this._runtime.on('stopOnException', (message) => {
-			this.sendEvent(new StoppedEvent(`exception`, MockDebugSession.threadID, message));
+			this.sendEvent(new StoppedEvent(`exception`, MonkeycDebugSession.threadID, message));
 		});
 		this._runtime.on('stopOnPause', () => {
-			//this._executionPaused.notify();
-			this.sendEvent(new StoppedEvent('pause', MockDebugSession.threadID));
+			this.sendEvent(new StoppedEvent('pause', MonkeycDebugSession.threadID));
 		});
 		this._runtime.on('breakpointValidated', (bp: IMockBreakpoint) => {
 			this.sendEvent(new BreakpointEvent('changed', { verified: bp.verified, id: bp.id } as DebugProtocol.Breakpoint));
 		});
 		this._runtime.on('continued', () => {
-			// if (args){
-			// 	this._executionPaused=new Subject();
-			// }
 			this.sendEvent(new ContinuedEvent(1, true));
 		});
 
@@ -198,13 +190,11 @@ export class MockDebugSession extends LoggingDebugSession {
 		// make VS Code to support data breakpoints
 		response.body.supportsDataBreakpoints = true;
 
-
-
 		// make VS Code to support completion in REPL
 		response.body.supportsCompletionsRequest = true;
+
 		response.body.completionTriggerCharacters = [".", "["];
 		//support variable type
-
 
 		// make VS Code to send cancelRequests
 		response.body.supportsCancelRequest = true;
@@ -280,14 +270,6 @@ export class MockDebugSession extends LoggingDebugSession {
 		this.sendResponse(response);
 	}
 
-	// protected async restartRequest(response: DebugProtocol.RestartResponse, args: DebugProtocol.RestartArguments) {
-
-	// 	console.log('Debug session restarted!');
-
-	// 	this.sendResponse(response);
-
-	// }
-
 	protected async setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments) {
 
 		console.log("Breakpoint request started!");
@@ -353,7 +335,7 @@ export class MockDebugSession extends LoggingDebugSession {
 		// runtime supports no threads so just return a default thread.
 		response.body = {
 			threads: [
-				new Thread(MockDebugSession.threadID, "thread 1")
+				new Thread(MonkeycDebugSession.threadID, "thread 1")
 			]
 		};
 		this.sendResponse(response);
@@ -604,12 +586,6 @@ export class MockDebugSession extends LoggingDebugSession {
 
 	protected cancelRequest(response: DebugProtocol.CancelResponse, args: DebugProtocol.CancelArguments) {
 
-		// if (args.requestId) {
-		// 	this._cancelationTokens.set(args.requestId, true);
-		// }
-		// if (args.progressId) {
-		// 	this._cancelledProgressId = args.progressId;
-		// }
 	}
 
 	protected terminateRequest(response: DebugProtocol.TerminateResponse, args: DebugProtocol.TerminateArguments) {
