@@ -74,8 +74,7 @@
   ],
   "contributes": {
     "menus": {
-      "commandPalette": [
-      ],
+      "commandPalette": [],
       "editor/title": [
         {
           "command": "extension.monkeyc-debug.runEditorContents",
@@ -149,11 +148,6 @@
                 "description": "Absolute path to a text file.",
                 "default": "${workspaceFolder}/${command:AskForProgramName}"
               },
-              "stopOnEntry": {
-                "type": "boolean",
-                "description": "Automatically stop after launch.",
-                "default": true
-              },
               "trace": {
                 "type": "boolean",
                 "description": "Enable logging of the Debug Adapter Protocol.",
@@ -179,7 +173,8 @@
             "name": "Ask for file name",
             "program": "${workspaceFolder}/${command:AskForProgramName}",
             "workspaceFolder": "${workspaceFolder}",
-            "stopOnEntry": true
+            "projectPath": "",
+            "sdkPath": ""
           }
         ],
         "configurationSnippets": [

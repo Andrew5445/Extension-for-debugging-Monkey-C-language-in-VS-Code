@@ -22,7 +22,7 @@ var fs = require("fs-extra");
 const readline = require('readline');
 
 
-interface UnitTest {
+interface IUnitTest {
 	name: string;
 	result: string;
 	time: string;
@@ -370,7 +370,7 @@ export function activate(context: vscode.ExtensionContext) {
 						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t ' + message.text + '\n'));
 						cmd.stdin.write(Buffer.from('###\n'));
 						cmd.stdout.on('data', async (data) => {
-							const tests: UnitTest[] = [];
+							const tests: IUnitTest[] = [];
 							const data_ = data.toString();
 							console.log(data_);
 
@@ -391,7 +391,7 @@ export function activate(context: vscode.ExtensionContext) {
 													result: unitTestInfo[4],
 													time: unitTestInfo[2],
 													assert: unitTestInfo[3]
-												} as UnitTest;
+												} as IUnitTest;
 												tests.push(unitTest);
 											}
 
@@ -466,7 +466,7 @@ export function activate(context: vscode.ExtensionContext) {
 						cmd.stdin.write(Buffer.from('###\n'));
 						cmd.stdout.on('data', async (data) => {
 
-							const tests: UnitTest[] = [];
+							const tests: IUnitTest[] = [];
 							buffer += data;
 							console.log(buffer);
 
@@ -485,7 +485,7 @@ export function activate(context: vscode.ExtensionContext) {
 													result: unitTestInfo[4],
 													time: unitTestInfo[2],
 													assert: unitTestInfo[3]
-												} as UnitTest;
+												} as IUnitTest;
 												tests.push(unitTest);
 											}
 
