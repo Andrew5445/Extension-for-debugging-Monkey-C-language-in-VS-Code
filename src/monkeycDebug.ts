@@ -233,11 +233,11 @@ export class MonkeycDebugSession extends LoggingDebugSession {
 
 		//resolve config paths
 		if (!args.projectPath) {
-			args.projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath') as string;
+			args.projectPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getProjectPath') as string;
 
 		}
 		if (!args.sdkPath) {
-			args.sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath') as string;
+			args.sdkPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath') as string;
 
 		}
 		if (!args.projectPath || !args.sdkPath) {
