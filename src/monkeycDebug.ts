@@ -18,10 +18,6 @@ import { glob } from 'glob';
 import { parseStringPromise } from 'xml2js';
 import { promises as fs, promises } from 'fs';
 
-// function timeout(ms: number) {
-// 	return new Promise(resolve => setTimeout(resolve, ms));
-// }
-
 /**
  * This interface describes the mock-debug specific launch attributes
  * (which are not part of the Debug Adapter Protocol).
@@ -114,39 +110,13 @@ export class MonkeycDebugSession extends LoggingDebugSession {
 			this.sendEvent(new ProgressStartEvent(ID, 'Program executing...'));
 		});
 		this._runtime.on('pauseProgramExecution', () => {
-			//this._programExecuting = false;
 			this.sendEvent(new ProgressEndEvent('' + this._progressId, 'Program stopped executing.'));
 		});
 
 		this._runtime.on('continuedAfterSetBreakpointsRequest', () => {
 			this._programExecuting = false;
-			//this.sendEvent(new ProgressEndEvent('' + this._progressId, 'Program stopped executing.'));
 		});
-		this._runtime.on('output', (text, filePath, line, column) => {
-
-
-			const e: DebugProtocol.OutputEvent = new OutputEvent(`${text}\n`);
-
-			// if (text === 'start' || text === 'startCollapsed' || text === 'end') {
-			// 	e.body.group = text;
-			// 	e.body.output = `group-${text}\n`;
-			// }
-
-			// e.body.source = this.createSource(filePath);
-			// e.body.line = this.convertDebuggerLineToClient(line);
-			// e.body.column = this.convertDebuggerColumnToClient(column);
-
-			let err;
-			if (/ERROR:.+/.test(text)) {
-				err = text.match(/ERROR: (.+): (.+): (.+)/);
-				const source = err[2].match(/(.+mc):(.+)/);
-				e.body.source = this.createSource(source[1]);
-				e.body.line = Number(source[2]);
-				e.body.category = 'stderr';
-			}
-			vscode.window.showErrorMessage(text);
-			this.sendEvent(e);
-		});
+		
 		this._runtime.on('end', () => {
 			this.sendEvent(new TerminatedEvent());
 		});
