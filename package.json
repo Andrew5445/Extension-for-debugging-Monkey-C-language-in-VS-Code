@@ -1,5 +1,5 @@
 {
-  "name": "monkeyc-debug",
+  "name": "mock-debug",
   "displayName": "Monkey C debugger",
   "version": "0.42.2",
   "publisher": "ondrejvrana",
@@ -63,50 +63,51 @@
   "main": "./out/extension",
   "activationEvents": [
     "onDebug",
-    "onDebugDynamicConfigurations:monkeyc",
-    "onCommand:extension.monkeyc-debug.getProgramName",
-    "onCommand:extension.monkeyc-debug.runEditorContents",
-    "onCommand:extension.monkeyc-debug.debugEditorContents",
+    "onDebugDynamicConfigurations:mock",
+    "onCommand:extension.mock-debug.getProgramName",
+    "onCommand:extension.mock-debug.runEditorContents",
+    "onCommand:extension.mock-debug.debugEditorContents",
     "onCommand:extension.monkeyc-debug.config",
     "onCommand:extension.monkeyc-debug.UnitTests",
-    "onCommand:extension.monkeyc-debug.restartDebuggingSession",
+    "onCommand:extension.mock-debug.restartDebuggingSession",
     "onCommand:extension.monkeyc-debug.createProjectFromTemplate"
   ],
   "contributes": {
     "menus": {
-      "commandPalette": [],
+      "commandPalette": [
+      ],
       "editor/title": [
         {
-          "command": "extension.monkeyc-debug.runEditorContents",
+          "command": "extension.mock-debug.runEditorContents",
           "when": "resourceLangId == monkeyc",
           "group": "1_run@10"
         },
         {
-          "command": "extension.monkeyc-debug.debugEditorContents",
+          "command": "extension.mock-debug.debugEditorContents",
           "when": "resourceLangId == monkeyc",
           "group": "1_run@20"
         }
       ],
       "debug/variables/context": [
         {
-          "command": "extension.monkeyc-debug.showAsHex",
-          "when": "debugConfigurationType == 'monkeyc' && debugProtocolVariableMenuContext == 'simple'"
+          "command": "extension.mock-debug.showAsHex",
+          "when": "debugConfigurationType == 'mock' && debugProtocolVariableMenuContext == 'simple'"
         }
       ]
     },
     "commands": [
       {
-        "command": "extension.monkeyc-debug.debugEditorContents",
+        "command": "extension.mock-debug.debugEditorContents",
         "title": "Debug File",
         "icon": "$(debug-alt)"
       },
       {
-        "command": "extension.monkeyc-debug.runEditorContents",
+        "command": "extension.mock-debug.runEditorContents",
         "title": "Run File",
         "icon": "$(play)"
       },
       {
-        "command": "extension.monkeyc-debug.showAsHex",
+        "command": "extension.mock-debug.showAsHex",
         "title": "Show as Hex"
       },
       {
@@ -133,8 +134,8 @@
     ],
     "debuggers": [
       {
-        "type": "monkeyc",
-        "label": "Monkey C Debug",
+        "type": "mock",
+        "label": "Mock Debug",
         "program": "./out/debugAdapter.js",
         "runtime": "node",
         "configurationAttributes": {
@@ -147,6 +148,11 @@
                 "type": "string",
                 "description": "Absolute path to a text file.",
                 "default": "${workspaceFolder}/${command:AskForProgramName}"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop after launch.",
+                "default": true
               },
               "trace": {
                 "type": "boolean",
@@ -168,20 +174,20 @@
         },
         "initialConfigurations": [
           {
-            "type": "monkeyc",
+            "type": "mock",
             "request": "launch",
             "name": "Ask for file name",
             "program": "${workspaceFolder}/${command:AskForProgramName}",
-            "projectPath": "",
-            "sdkPath": ""
+            "workspaceFolder": "${workspaceFolder}",
+            "stopOnEntry": true
           }
         ],
         "configurationSnippets": [
           {
-            "label": "Monkey C Debug: Launch",
+            "label": "Mock Debug: Launch",
             "description": "A new configuration for 'debugging' a user selected markdown file.",
             "body": {
-              "type": "monkeyc",
+              "type": "mock",
               "request": "launch",
               "name": "Ask for file name",
               "program": "^\"\\${workspaceFolder}/\\${command:AskForProgramName}\"",
@@ -191,7 +197,7 @@
           }
         ],
         "variables": {
-          "AskForProgramName": "extension.monkeyc-debug.getProgramName"
+          "AskForProgramName": "extension.mock-debug.getProgramName"
         }
       }
     ]

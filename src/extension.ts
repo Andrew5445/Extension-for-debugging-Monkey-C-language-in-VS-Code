@@ -22,12 +22,13 @@ var fs = require("fs-extra");
 const readline = require('readline');
 
 
-interface IUnitTest {
+interface UnitTest {
 	name: string;
 	result: string;
 	time: string;
 	assert: string;
 }
+
 
 /*
  * The compile time flag 'runMode' controls how the debug adapter is run.
@@ -38,9 +39,9 @@ const runMode: 'external' | 'server' | 'namedPipeServer' | 'inline' = 'inline';
 export function activate(context: vscode.ExtensionContext) {
 	let currentPanel: vscode.WebviewPanel | undefined = undefined;
 	context.subscriptions.push(
-		vscode.commands.registerCommand('extension.monkeyc-debug.runEditorContents', (resource: vscode.Uri) => {
+		vscode.commands.registerCommand('extension.mock-debug.runEditorContents', (resource: vscode.Uri) => {
 			vscode.debug.startDebugging(undefined, {
-				type: 'monkeyc',
+				type: 'mock',
 				name: 'Run Editor Contents',
 				request: 'launch',
 				program: resource.fsPath
@@ -48,27 +49,27 @@ export function activate(context: vscode.ExtensionContext) {
 				//noDebug: true
 			});
 		}),
-		vscode.commands.registerCommand('extension.monkeyc-debug.debugEditorContents', (resource: vscode.Uri) => {
+		vscode.commands.registerCommand('extension.mock-debug.debugEditorContents', (resource: vscode.Uri) => {
 			vscode.debug.startDebugging(undefined, {
-				type: 'monkeyc',
+				type: 'mock',
 				name: 'Debug Editor Contents',
 				request: 'launch',
 				program: resource.fsPath
 			});
 		}),
-		vscode.commands.registerCommand('extension.monkeyc-debug.showAsHex', (variable) => {
+		vscode.commands.registerCommand('extension.mock-debug.showAsHex', (variable) => {
 			vscode.window.showInformationMessage(`${variable.container.name}: ${variable.variable.name}`);
 		})
 	);
 	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.monkeyc-debug.getSdkPath',
+		'extension.mock-debug.getSdkPath',
 		() => {
 			return context.globalState.get('sdkPath');
 		}
 
 	));
 	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.monkeyc-debug.getProjectPath',
+		'extension.mock-debug.getProjectPath',
 		() => {
 			return context.globalState.get('projectPath');
 		}
@@ -79,8 +80,8 @@ export function activate(context: vscode.ExtensionContext) {
 		'extension.monkeyc-debug.createProjectFromTemplate',
 		async () => {
 
-			const sdkPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath');
-			const projectPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getProjectPath');
+			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
+			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
 			if (!sdkPath) {
 				vscode.window.showErrorMessage('No templates found, please select sdk path in the debugger config.');
 				vscode.commands.executeCommand('extension.monkeyc-debug.config');
@@ -149,7 +150,7 @@ export function activate(context: vscode.ExtensionContext) {
 	));
 
 	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.monkeyc-debug.showErrorMessage',
+		'extension.mock-debug.showErrorMessage',
 		(message) => {
 			vscode.window.showErrorMessage(message);
 			//return context.globalState.get('projectPath');
@@ -171,7 +172,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	));
 
-	context.subscriptions.push(vscode.commands.registerCommand('extension.monkeyc-debug.getProgramName', config => {
+	context.subscriptions.push(vscode.commands.registerCommand('extension.mock-debug.getProgramName', config => {
 		return vscode.window.showInputBox({
 			placeHolder: "Please enter the name of a markdown file in the workspace folder",
 			value: "readme.md"
@@ -179,11 +180,11 @@ export function activate(context: vscode.ExtensionContext) {
 	}));
 
 	// register a configuration provider for 'mock' debug type
-	const provider = new MonkeycConfigurationProvider();
-	context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('monkeyc', provider));
+	const provider = new MockConfigurationProvider();
+	context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('mock', provider));
 
 	// register a dynamic configuration provider for 'mock' debug type
-	context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('monkeyc', {
+	context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('mock', {
 		provideDebugConfigurations(folder: WorkspaceFolder | undefined): ProviderResult<DebugConfiguration[]> {
 			return [
 				{
@@ -199,7 +200,7 @@ export function activate(context: vscode.ExtensionContext) {
 					program: "${file}"
 				},
 				{
-					name: "Monkey C Launch",
+					name: "Mock Launch",
 					request: "launch",
 					type: "node",
 					program: "${file}"
@@ -213,12 +214,12 @@ export function activate(context: vscode.ExtensionContext) {
 	switch (runMode) {
 		case 'server':
 			// run the debug adapter as a server inside the extension and communicate via a socket
-			factory = new MonkeycDebugAdapterServerDescriptorFactory();
+			factory = new MockDebugAdapterServerDescriptorFactory();
 			break;
 
 		case 'namedPipeServer':
 			// run the debug adapter as a server inside the extension and communicate via a named pipe (Windows) or UNIX domain socket (non-Windows)
-			factory = new MonkeycDebugAdapterNamedPipeServerDescriptorFactory();
+			factory = new MockDebugAdapterNamedPipeServerDescriptorFactory();
 			break;
 
 		case 'inline':
@@ -232,7 +233,7 @@ export function activate(context: vscode.ExtensionContext) {
 			break;
 	}
 
-	context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('monkeyc', factory));
+	context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('mock', factory));
 	if ('dispose' in factory) {
 		context.subscriptions.push(factory);
 	}
@@ -260,8 +261,8 @@ export function activate(context: vscode.ExtensionContext) {
 			currentPanel.webview.html = getWebviewContent();
 
 			//Load sdk path, project
-			const sdkPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath');
-			const projectPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getProjectPath');
+			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
+			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
 			if (sdkPath) {
 				vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', { sdkPath });
 			}
@@ -294,7 +295,7 @@ export function activate(context: vscode.ExtensionContext) {
 									writeFile(launchFile[0], json, 'utf8', () => { }); // write it back 
 								}
 							});
-							vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath', message.text);
+							vscode.commands.executeCommand('extension.mock-debug.getSdkPath', message.text);
 							break;
 						case 'openBrowseDialog':
 							vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true }).then(fileUri => {
@@ -331,8 +332,8 @@ export function activate(context: vscode.ExtensionContext) {
 			// Handle messages from the webview
 			currentPanel.webview.onDidReceiveMessage(
 				async message => {
-					let sdkPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath');
-					let projectPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getProjectPath');
+					let sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
+					let projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
 					if (!sdkPath || !projectPath) {
 						if (!sdkPath) {
 							vscode.window.showErrorMessage('Sdk path has not been selected.');
@@ -369,7 +370,7 @@ export function activate(context: vscode.ExtensionContext) {
 						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t ' + message.text + '\n'));
 						cmd.stdin.write(Buffer.from('###\n'));
 						cmd.stdout.on('data', async (data) => {
-							const tests: IUnitTest[] = [];
+							const tests: UnitTest[] = [];
 							const data_ = data.toString();
 							console.log(data_);
 
@@ -390,7 +391,7 @@ export function activate(context: vscode.ExtensionContext) {
 													result: unitTestInfo[4],
 													time: unitTestInfo[2],
 													assert: unitTestInfo[3]
-												} as IUnitTest;
+												} as UnitTest;
 												tests.push(unitTest);
 											}
 
@@ -465,7 +466,7 @@ export function activate(context: vscode.ExtensionContext) {
 						cmd.stdin.write(Buffer.from('###\n'));
 						cmd.stdout.on('data', async (data) => {
 
-							const tests: IUnitTest[] = [];
+							const tests: UnitTest[] = [];
 							buffer += data;
 							console.log(buffer);
 
@@ -484,7 +485,7 @@ export function activate(context: vscode.ExtensionContext) {
 													result: unitTestInfo[4],
 													time: unitTestInfo[2],
 													assert: unitTestInfo[3]
-												} as IUnitTest;
+												} as UnitTest;
 												tests.push(unitTest);
 											}
 
@@ -789,7 +790,7 @@ export function deactivate() {
 	// nothing to do
 }
 
-class MonkeycConfigurationProvider implements vscode.DebugConfigurationProvider {
+class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
 
 	/**
 	 * Massage a debug configuration just before a debug session is being launched,
@@ -801,7 +802,7 @@ class MonkeycConfigurationProvider implements vscode.DebugConfigurationProvider 
 		if (!config.type && !config.request && !config.name) {
 			const editor = vscode.window.activeTextEditor;
 			if (editor && editor.document.languageId === 'monkeyc') {
-				config.type = 'monkeyc';
+				config.type = 'mock';
 				config.name = 'Launch';
 				config.request = 'launch';
 				config.program = '${file}';
@@ -850,7 +851,7 @@ class DebugAdapterExecutableFactory implements vscode.DebugAdapterDescriptorFact
 	}
 }
 
-class MonkeycDebugAdapterServerDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
+class MockDebugAdapterServerDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
 
 	private server?: Net.Server;
 
@@ -876,7 +877,7 @@ class MonkeycDebugAdapterServerDescriptorFactory implements vscode.DebugAdapterD
 	}
 }
 
-class MonkeycDebugAdapterNamedPipeServerDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
+class MockDebugAdapterNamedPipeServerDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
 
 	private server?: Net.Server;
 

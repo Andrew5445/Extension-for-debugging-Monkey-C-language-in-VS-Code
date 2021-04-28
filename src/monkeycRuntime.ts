@@ -121,7 +121,7 @@ export class MockRuntime extends EventEmitter {
 	/**
 	 * Start executing the given program.
 	 */
-	public async start(program: string, sdkPath: string, workspaceFolder: string, noDebug: boolean, device: string, launchDone, configurationDone) {
+	public async start(program: string, sdkPath: string, workspaceFolder: string, stopOnEntry: boolean, noDebug: boolean, device: string, launchDone, configurationDone) {
 
 		this._device = device;
 
@@ -150,9 +150,14 @@ export class MockRuntime extends EventEmitter {
 
 		this.continue();
 
-		// we step once
-		this.step(false, 'stopOnEntry');
 
+		if (stopOnEntry) {
+			// we step once
+			this.step(false, 'stopOnEntry');
+		} else {
+			// we just start to run until we hit a breakpoint or an exception
+
+		}
 		return null;
 	}
 
@@ -1039,6 +1044,8 @@ export class MockRuntime extends EventEmitter {
 			await new Promise(resolve => setTimeout(resolve, 5000));
 		}
 
+
+		//let programFile = path.split("\\")[7];
 		let setBreakpointCommand = 'break ' + path + ':' + (ln + 1).toString() + '\n';
 		this._messageSender.stdin.write(setBreakpointCommand);
 		console.log(setBreakpointCommand);
@@ -1050,7 +1057,6 @@ export class MockRuntime extends EventEmitter {
 	}
 
 	public async launchDebugger() {
-
 		//start messageSender process
 		this._messageSender = spawn('cmd', ['/K'], { shell: true });
 		this._messageSender.stdin.setEncoding = 'utf-8';
