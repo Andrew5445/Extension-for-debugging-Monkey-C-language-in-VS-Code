@@ -205,7 +205,7 @@ export class MonkeycDebugSession extends LoggingDebugSession {
 		response.body.supportsExceptionInfoRequest = true;
 
 		response.body.supportsRestartRequest = true;
-
+		
 		this.sendResponse(response);
 
 		// since this debug adapter can accept configuration requests like 'setBreakpoint' at any time,

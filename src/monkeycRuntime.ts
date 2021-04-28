@@ -1039,8 +1039,6 @@ export class MockRuntime extends EventEmitter {
 			await new Promise(resolve => setTimeout(resolve, 5000));
 		}
 
-
-		//let programFile = path.split("\\")[7];
 		let setBreakpointCommand = 'break ' + path + ':' + (ln + 1).toString() + '\n';
 		this._messageSender.stdin.write(setBreakpointCommand);
 		console.log(setBreakpointCommand);
@@ -1052,6 +1050,7 @@ export class MockRuntime extends EventEmitter {
 	}
 
 	public async launchDebugger() {
+
 		//start messageSender process
 		this._messageSender = spawn('cmd', ['/K'], { shell: true });
 		this._messageSender.stdin.setEncoding = 'utf-8';

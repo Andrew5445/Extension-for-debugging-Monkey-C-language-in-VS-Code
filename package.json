@@ -172,7 +172,6 @@
             "request": "launch",
             "name": "Ask for file name",
             "program": "${workspaceFolder}/${command:AskForProgramName}",
-            "workspaceFolder": "${workspaceFolder}",
             "projectPath": "",
             "sdkPath": ""
           }

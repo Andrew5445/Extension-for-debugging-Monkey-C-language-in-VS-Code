@@ -29,7 +29,6 @@ interface IUnitTest {
 	assert: string;
 }
 
-
 /*
  * The compile time flag 'runMode' controls how the debug adapter is run.
  * Please note: the test suite only supports 'external' mode.
