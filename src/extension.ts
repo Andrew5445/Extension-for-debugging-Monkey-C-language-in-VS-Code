@@ -17,6 +17,7 @@ import { glob } from 'glob';
 import { readFile, writeFile, createReadStream, readdirSync } from 'fs';
 import * as path from 'path';
 import { parseStringPromise } from 'xml2js';
+import stripJsonComments = require("strip-json-comments");
 
 var fs = require("fs-extra");
 const readline = require('readline');
@@ -287,7 +288,7 @@ export function activate(context: vscode.ExtensionContext) {
 								if (err) {
 									console.log(err);
 								} else {
-									let obj = JSON.parse(data);
+									let obj = JSON.parse(stripJsonComments(data));
 
 									obj.configurations[0].sdkPath = sdkPath;
 									obj.configurations[0].projectPath = projectPath;
