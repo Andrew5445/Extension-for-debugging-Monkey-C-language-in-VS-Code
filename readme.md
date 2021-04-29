@@ -1,27 +1,14 @@
-# VS Code Mock Debug
-
 Installation setup
-* Install the Connect IQ SDK from https://developer.garmin.com/connect-iq/sdk/
-* Install the **Mock Debug** extension in VS Code.
-* Create a new 'program' file `readme.md` and enter several lines of arbitrary text.
-* Switch to the debug viewlet and press the gear dropdown.
-* Select the debug environment "Mock Debug".
-* Press the green 'play' button to start debugging.
+* Install the Connect IQ SDK from https://developer.garmin.com/connect-iq/sdk/.
+* Open SDK manager and download SDK version 3.2.3 and set it as current version.
+* Go to devices and download all of the available devices.
+* Open Visual Studio Code and install extension Monkey C from Alexander Fedora.
+* Install debugger extension from the .vsix file.
+* Clone a Connect IQ project to debug, e.g. https://github.com/okdar/smartarcsactive
+* (optional) Go to Run and Debug section and click on create a launch.json file. 
+* Open command palette, find and execute command Configure Monkey C debugger".
+* Fill in the form and set the project and SDK path.
+* Press F5 and select Monkey C, then target device.
 
-You can now 'step through' the `readme.md` file, set and hit breakpoints, and run into exceptions (if the word exception appears in a line).
+You can now debug the Connect IQ application.
 
-![Mock Debug](images/mock-debug.gif)
-
-## Build and Run
-
-[![build status](https://travis-ci.org/Microsoft/vscode-mock-debug.svg?branch=master)](https://travis-ci.org/Microsoft/vscode-mock-debug)
-[![build status](https://ci.appveyor.com/api/projects/status/empmw5q1tk6h1fly/branch/master?svg=true)](https://ci.appveyor.com/project/weinand/vscode-mock-debug)
-
-
-* Clone the project [https://github.com/Microsoft/vscode-mock-debug.git](https://github.com/Microsoft/vscode-mock-debug.git)
-* Open the project folder in VS Code.
-* Press `F5` to build and launch Mock Debug in another VS Code window. In that window:
-  * Open a new workspace, create a new 'program' file `readme.md` and enter several lines of arbitrary text.
-  * Switch to the debug viewlet and press the gear dropdown.
-  * Select the debug environment "Mock Debug".
-  * Press `F5` to start debugging.
