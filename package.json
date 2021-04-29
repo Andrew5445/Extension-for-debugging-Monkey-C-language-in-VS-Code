@@ -66,56 +66,24 @@
   "activationEvents": [
     "onDebug",
     "onDebugDynamicConfigurations:mock",
-    "onCommand:extension.mock-debug.getProgramName",
-    "onCommand:extension.mock-debug.runEditorContents",
-    "onCommand:extension.mock-debug.debugEditorContents",
+    "onCommand:extension.monkeyc-debug.getProgramName",
     "onCommand:extension.monkeyc-debug.config",
-    "onCommand:extension.monkeyc-debug.UnitTests",
+    "onCommand:extension.monkeyc-debug.unitTests",
     "onCommand:extension.monkeyc-debug.createProjectFromTemplate"
   ],
   "contributes": {
     "menus": {
       "commandPalette": [],
-      "editor/title": [
-        {
-          "command": "extension.mock-debug.runEditorContents",
-          "when": "resourceLangId == monkeyc",
-          "group": "1_run@10"
-        },
-        {
-          "command": "extension.mock-debug.debugEditorContents",
-          "when": "resourceLangId == monkeyc",
-          "group": "1_run@20"
-        }
-      ],
-      "debug/variables/context": [
-        {
-          "command": "extension.mock-debug.showAsHex",
-          "when": "debugConfigurationType == 'mock' && debugProtocolVariableMenuContext == 'simple'"
-        }
-      ]
+      "editor/title": [],
+      "debug/variables/context": []
     },
     "commands": [
-      {
-        "command": "extension.mock-debug.debugEditorContents",
-        "title": "Debug File",
-        "icon": "$(debug-alt)"
-      },
-      {
-        "command": "extension.mock-debug.runEditorContents",
-        "title": "Run File",
-        "icon": "$(play)"
-      },
-      {
-        "command": "extension.mock-debug.showAsHex",
-        "title": "Show as Hex"
-      },
       {
         "command": "extension.monkeyc-debug.config",
         "title": "Configure Monkey C debugger"
       },
       {
-        "command": "extension.monkeyc-debug.UnitTests",
+        "command": "extension.monkeyc-debug.unitTests",
         "title": "Run Unit Tests"
       },
       {
@@ -197,7 +165,7 @@
           }
         ],
         "variables": {
-          "AskForProgramName": "extension.mock-debug.getProgramName"
+          "AskForProgramName": "extension.monkeyc-debug.getProgramName"
         }
       }
     ]

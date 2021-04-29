@@ -38,30 +38,9 @@ interface UnitTest {
 const runMode: 'external' | 'server' | 'namedPipeServer' | 'inline' = 'inline';
 
 export function activate(context: vscode.ExtensionContext) {
+
 	let currentPanel: vscode.WebviewPanel | undefined = undefined;
-	context.subscriptions.push(
-		vscode.commands.registerCommand('extension.mock-debug.runEditorContents', (resource: vscode.Uri) => {
-			vscode.debug.startDebugging(undefined, {
-				type: 'mock',
-				name: 'Run Editor Contents',
-				request: 'launch',
-				program: resource.fsPath
-			}, {
-				//noDebug: true
-			});
-		}),
-		vscode.commands.registerCommand('extension.mock-debug.debugEditorContents', (resource: vscode.Uri) => {
-			vscode.debug.startDebugging(undefined, {
-				type: 'mock',
-				name: 'Debug Editor Contents',
-				request: 'launch',
-				program: resource.fsPath
-			});
-		}),
-		vscode.commands.registerCommand('extension.mock-debug.showAsHex', (variable) => {
-			vscode.window.showInformationMessage(`${variable.container.name}: ${variable.variable.name}`);
-		})
-	);
+
 	context.subscriptions.push(vscode.commands.registerCommand(
 		'extension.monkeyc-debug.getSdkPath',
 		() => {
@@ -151,10 +130,9 @@ export function activate(context: vscode.ExtensionContext) {
 	));
 
 	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.mock-debug.showErrorMessage',
+		'extension.monkeyc-debug.showErrorMessage',
 		(message) => {
 			vscode.window.showErrorMessage(message);
-			//return context.globalState.get('projectPath');
 		}
 
 	));
@@ -173,7 +151,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	));
 
-	context.subscriptions.push(vscode.commands.registerCommand('extension.mock-debug.getProgramName', config => {
+	context.subscriptions.push(vscode.commands.registerCommand('extension.monkeyc-debug.getProgramName', config => {
 		return vscode.window.showInputBox({
 			placeHolder: "Please enter the name of a markdown file in the workspace folder",
 			value: "readme.md"
@@ -318,7 +296,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('extension.monkeyc-debug.UnitTests', () => {
+		vscode.commands.registerCommand('extension.monkeyc-debug.unitTests', () => {
 			currentPanel = vscode.window.createWebviewPanel(
 				'unit tests',
 				'Unit tests',
@@ -333,8 +311,8 @@ export function activate(context: vscode.ExtensionContext) {
 			// Handle messages from the webview
 			currentPanel.webview.onDidReceiveMessage(
 				async message => {
-					let sdkPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath');
-					let projectPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getProjectPath');
+					let sdkPath:string = await vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath') as string;
+					let projectPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getProjectPath') as string;
 					if (!sdkPath || !projectPath) {
 						if (!sdkPath) {
 							vscode.window.showErrorMessage('Sdk path has not been selected.');
@@ -361,14 +339,15 @@ export function activate(context: vscode.ExtensionContext) {
 
 					}
 					if (message.command === 'run-test-again') {
-						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath as string), { placeHolder: "Select Garmin device" });
+						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath), { placeHolder: "Select Garmin device" });
+						const projectName = projectPath!.match(/.*\\(.*)/)![1];
 						let buffer;
 						const cmd = spawn('cmd', ['/K'], { shell: true });
 						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
 						cmd.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
-						cmd.stdin.write(Buffer.from('monkeyc -d ' + device + ' -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "c:\\Users\\ondre\\Desktop\\GARMIN SDK\\developer_key.der" -t\n'));
+						cmd.stdin.write(Buffer.from('monkeyc -d ' + device + ' -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\'+projectName+'.prg" -y "' + sdkPath + '\\developer_key.der" -t\n'));
 						cmd.stdin.write(Buffer.from('connectiq\n'));
-						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t ' + message.text + '\n'));
+						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\bin\\monkeydo.bat" "' + projectPath + '\\bin\\'+projectName+'.prg" '+device+' /t ' + message.text + '\n'));
 						cmd.stdin.write(Buffer.from('###\n'));
 						cmd.stdout.on('data', async (data) => {
 							const tests: UnitTest[] = [];
@@ -440,7 +419,7 @@ export function activate(context: vscode.ExtensionContext) {
 										});
 										console.log(files);
 									});
-									vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', tests);
+									vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', {tests});
 									//console.log(data_);
 									cmd.kill();
 									buffer = '';
@@ -456,14 +435,15 @@ export function activate(context: vscode.ExtensionContext) {
 					}
 					if (message.command === 'run-tests') {
 
-						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath as string), { placeHolder: "Select Garmin device" });
+						const device = await vscode.window.showQuickPick(await getAvailableDevices(projectPath), { placeHolder: "Select Garmin device" });
+						const projectName = projectPath!.match(/.*\\(.*)/)![1];
 						let buffer;
 						const cmd = spawn('cmd', ['/K'], { shell: true });
 						cmd.stdin.write(Buffer.from('for /f usebackq %i in (%APPDATA%\\Garmin\\ConnectIQ\\current-sdk.cfg) do set CIQ_HOME=%~pi\n'));
 						cmd.stdin.write(Buffer.from('set PATH=%PATH%;%CIQ_HOME%\\bin\n'));
-						cmd.stdin.write(Buffer.from('monkeyc -d ' + device + ' -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\WATCHFACE.prg" -y "' + sdkPath + '\\developer_key.der" -t\n'));
+						cmd.stdin.write(Buffer.from('monkeyc -d ' + device + ' -f "' + projectPath + '\\monkey.jungle" -o "' + projectPath + '\\bin\\'+projectName+'.prg" -y "' + sdkPath + '\\developer_key.der" -t\n'));
 						cmd.stdin.write(Buffer.from('connectiq\n'));
-						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\bin\\monkeydo.bat" "' + projectPath + '\\bin\\WATCHFACE.prg" d2bravo /t\n'));
+						cmd.stdin.write(Buffer.from('"' + sdkPath + '\\bin\\monkeydo.bat" "' + projectPath + '\\bin\\'+projectName+'.prg" '+device+' /t\n'));
 						cmd.stdin.write(Buffer.from('###\n'));
 						cmd.stdout.on('data', async (data) => {
 
