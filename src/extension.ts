@@ -63,14 +63,14 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.mock-debug.getSdkPath',
+		'extension.monkeyc-debug.getSdkPath',
 		() => {
 			return context.globalState.get('sdkPath');
 		}
 
 	));
 	context.subscriptions.push(vscode.commands.registerCommand(
-		'extension.mock-debug.getProjectPath',
+		'extension.monkeyc-debug.getProjectPath',
 		() => {
 			return context.globalState.get('projectPath');
 		}
@@ -81,8 +81,8 @@ export function activate(context: vscode.ExtensionContext) {
 		'extension.monkeyc-debug.createProjectFromTemplate',
 		async () => {
 
-			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
-			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+			const sdkPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath');
+			const projectPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getProjectPath');
 			if (!sdkPath) {
 				vscode.window.showErrorMessage('No templates found, please select sdk path in the debugger config.');
 				vscode.commands.executeCommand('extension.monkeyc-debug.config');
@@ -262,8 +262,8 @@ export function activate(context: vscode.ExtensionContext) {
 			currentPanel.webview.html = getWebviewContent();
 
 			//Load sdk path, project
-			const sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
-			const projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+			const sdkPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath');
+			const projectPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getProjectPath');
 			if (sdkPath) {
 				vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', { sdkPath });
 			}
@@ -296,7 +296,7 @@ export function activate(context: vscode.ExtensionContext) {
 									writeFile(launchFile[0], json, 'utf8', () => { }); // write it back 
 								}
 							});
-							vscode.commands.executeCommand('extension.mock-debug.getSdkPath', message.text);
+							vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath', message.text);
 							break;
 						case 'openBrowseDialog':
 							vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true }).then(fileUri => {
@@ -333,8 +333,8 @@ export function activate(context: vscode.ExtensionContext) {
 			// Handle messages from the webview
 			currentPanel.webview.onDidReceiveMessage(
 				async message => {
-					let sdkPath = await vscode.commands.executeCommand('extension.mock-debug.getSdkPath');
-					let projectPath = await vscode.commands.executeCommand('extension.mock-debug.getProjectPath');
+					let sdkPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getSdkPath');
+					let projectPath = await vscode.commands.executeCommand('extension.monkeyc-debug.getProjectPath');
 					if (!sdkPath || !projectPath) {
 						if (!sdkPath) {
 							vscode.window.showErrorMessage('Sdk path has not been selected.');

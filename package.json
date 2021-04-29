@@ -1,5 +1,5 @@
 {
-  "name": "mmonkeyc-debug",
+  "name": "monkeyc-debug",
   "displayName": "Monkey C debugger",
   "version": "0.42.2",
   "publisher": "ondrejvrana",
@@ -148,6 +148,11 @@
                 "type": "string",
                 "description": "Absolute path to a text file.",
                 "default": "${workspaceFolder}/${command:AskForProgramName}"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop after launch.",
+                "default": true
               },
               "trace": {
                 "type": "boolean",
