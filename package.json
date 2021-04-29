@@ -1,5 +1,5 @@
 {
-  "name": "mock-debug",
+  "name": "mmonkeyc-debug",
   "displayName": "Monkey C debugger",
   "version": "0.42.2",
   "publisher": "ondrejvrana",
@@ -71,7 +71,6 @@
     "onCommand:extension.mock-debug.debugEditorContents",
     "onCommand:extension.monkeyc-debug.config",
     "onCommand:extension.monkeyc-debug.UnitTests",
-    "onCommand:extension.mock-debug.restartDebuggingSession",
     "onCommand:extension.monkeyc-debug.createProjectFromTemplate"
   ],
   "contributes": {
@@ -150,11 +149,6 @@
                 "description": "Absolute path to a text file.",
                 "default": "${workspaceFolder}/${command:AskForProgramName}"
               },
-              "stopOnEntry": {
-                "type": "boolean",
-                "description": "Automatically stop after launch.",
-                "default": true
-              },
               "trace": {
                 "type": "boolean",
                 "description": "Enable logging of the Debug Adapter Protocol.",
@@ -179,8 +173,8 @@
             "request": "launch",
             "name": "Ask for file name",
             "program": "${workspaceFolder}/${command:AskForProgramName}",
-            "workspaceFolder": "${workspaceFolder}",
-            "stopOnEntry": true
+            "projectPath": "",
+            "sdkPath": ""
           }
         ],
         "configurationSnippets": [
