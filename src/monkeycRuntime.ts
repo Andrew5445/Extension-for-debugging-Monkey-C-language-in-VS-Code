@@ -9,7 +9,7 @@ import { DebuggerListener } from './debuggerListener';
 import { glob } from 'glob';
 import * as path from 'path';
 
-export interface IMockBreakpoint {
+export interface IMonkeycBreakpoint {
 	id: number;
 	line: number;
 	verified: boolean;
@@ -20,12 +20,12 @@ interface IStepInTargets {
 	label: string;
 
 }
-export interface IMockVariable {
+export interface IMonkeycVariable {
 	name: string;
 	value?: string;
 	type?: string;
 	variablesReference: number;
-	children: IMockVariable[];
+	children: IMonkeycVariable[];
 }
 
 interface IStackFrame {
@@ -52,7 +52,7 @@ interface IErrorDetails {
 	stackTrace: string;
 }
 
-export class MockRuntime extends EventEmitter {
+export class MonkeycRuntime extends EventEmitter {
 	private _currentProjectFolder;
 
 	private _sdkPath;
@@ -71,22 +71,22 @@ export class MockRuntime extends EventEmitter {
 
 	private _currentColumn: number | undefined;
 
-	private _localVariables: IMockVariable[] = [];
+	private _localVariables: IMonkeycVariable[] = [];
 	public get localVariables() {
 		return this._localVariables;
 	}
 
-	private _argsVariables: IMockVariable[] = [];
+	private _argsVariables: IMonkeycVariable[] = [];
 	public get argsVariables() {
 		return this._argsVariables;
 	}
 
-	private _globalVariables: IMockVariable[] = [];
+	private _globalVariables: IMonkeycVariable[] = [];
 	public get globalVariables() {
 		return this._globalVariables;
 	}
 
-	private _breakPoints = new Map<string, IMockBreakpoint[]>();
+	private _breakPoints = new Map<string, IMonkeycBreakpoint[]>();
 
 	private _buffer;
 
@@ -298,7 +298,7 @@ export class MockRuntime extends EventEmitter {
 	}
 
 
-	public async getLocalVariables(variableHandles): Promise<IMockVariable[]> {
+	public async getLocalVariables(variableHandles): Promise<IMonkeycVariable[]> {
 		if (this._localVariables.length > 0) {
 			return this._localVariables;
 		}
@@ -340,7 +340,7 @@ export class MockRuntime extends EventEmitter {
 										this.index = 2;
 									}
 
-									const variable: IMockVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
+									const variable: IMonkeycVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
 									this.parseChildVariables(output.split('\n'), indentation, variable.children, variableHandles);
 									this._localVariables.push(variable);
 									this.index = 0;
@@ -363,7 +363,7 @@ export class MockRuntime extends EventEmitter {
 		return [];
 	}
 
-	public async getArgsVariables(variableHandles): Promise<IMockVariable[]> {
+	public async getArgsVariables(variableHandles): Promise<IMonkeycVariable[]> {
 		if (this._argsVariables.length > 0) {
 			return this._argsVariables;
 		}
@@ -404,7 +404,7 @@ export class MockRuntime extends EventEmitter {
 										this.index = 2;
 									}
 
-									const variable: IMockVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
+									const variable: IMonkeycVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
 									this.parseChildVariables(output.split('\n'), indentation, variable.children, variableHandles);
 									this._argsVariables.push(variable);
 									this.index = 0;
@@ -468,7 +468,7 @@ export class MockRuntime extends EventEmitter {
 									this.index = 2;
 								}
 
-								const variable: IMockVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
+								const variable: IMonkeycVariable = { name: variableInfo[1], value: variableInfo[2].split(' ')[0], type: variableInfo[2].split(' ')[1].replace(/[/)]|[/(]/g, ''), children: [], variablesReference: variableHandles.create(variableInfo[1]) };
 								this.parseChildVariables(output.split('\n'), indentation, variable.children, variableHandles);
 								this._globalVariables.push(variable);
 								this.index = 0;
@@ -494,7 +494,7 @@ export class MockRuntime extends EventEmitter {
 
 	private _isKeyValuePair = false;
 
-	private parseChildVariables(lines: string[], indentation, variables: IMockVariable[], variableHandles) {
+	private parseChildVariables(lines: string[], indentation, variables: IMonkeycVariable[], variableHandles) {
 
 		//only for testing
 
@@ -530,7 +530,7 @@ export class MockRuntime extends EventEmitter {
 
 				//structured object
 				if (/^.+\s[=]$/.test(lines[this.index].trim()) || /[<].+[>]/.test(varInfo[0])) {
-					let variable: IMockVariable;
+					let variable: IMonkeycVariable;
 					let indentation: number = 0;
 					let varTypeAndReference;
 					//var name case
@@ -603,7 +603,7 @@ export class MockRuntime extends EventEmitter {
 						const value = variables[variables.length - 1];
 						value.name = 'value';
 
-						const keyValuePair: IMockVariable = { name: key.value!, value: value.value, children: [key, value], variablesReference: 0 };
+						const keyValuePair: IMonkeycVariable = { name: key.value!, value: value.value, children: [key, value], variablesReference: 0 };
 						keyValuePair.variablesReference = variableHandles.create(keyValuePair.value);
 
 						variables.splice(variables.length - 2, 2);
@@ -629,7 +629,7 @@ export class MockRuntime extends EventEmitter {
 							const value = variables[variables.length - 1];
 							value.name = 'value';
 
-							const keyValuePair: IMockVariable = { name: key.value!, value: value.value, children: [key, value], variablesReference: 0 };
+							const keyValuePair: IMonkeycVariable = { name: key.value!, value: value.value, children: [key, value], variablesReference: 0 };
 							keyValuePair.variablesReference = variableHandles.create(keyValuePair.value);
 
 							variables.splice(variables.length - 2, 2);
@@ -655,9 +655,9 @@ export class MockRuntime extends EventEmitter {
 		}
 
 	}
-	private childrenVariables: IMockVariable[] = [];
+	private childrenVariables: IMonkeycVariable[] = [];
 
-	public getChildVariables(variablesReference, index, variables: IMockVariable[]): IMockVariable[] {
+	public getChildVariables(variablesReference, index, variables: IMonkeycVariable[]): IMonkeycVariable[] {
 
 		if (index < variables.length) {
 			const currentVariable = variables[index];
@@ -672,7 +672,7 @@ export class MockRuntime extends EventEmitter {
 		return this.childrenVariables;
 	}
 
-	private result: IMockVariable | null = null;
+	private result: IMonkeycVariable | null = null;
 
 	private clearVariables() {
 		this._globalVariables = [];
@@ -680,7 +680,7 @@ export class MockRuntime extends EventEmitter {
 		this._argsVariables = [];
 	}
 
-	public evaluate(expression, index, variables: IMockVariable[]): IMockVariable | null {
+	public evaluate(expression, index, variables: IMonkeycVariable[]): IMonkeycVariable | null {
 		if (index < variables.length) {
 			const currentVariable = variables[index];
 			if (currentVariable.name === expression) {
@@ -790,10 +790,10 @@ export class MockRuntime extends EventEmitter {
 	 * Set breakpoint in file with given line.
 	 */
 	public async setBreakPoint(path: string, line: number) {
-		const bp: IMockBreakpoint = { verified: false, line, id: this._breakpointId++ };
+		const bp: IMonkeycBreakpoint = { verified: false, line, id: this._breakpointId++ };
 		let bps = this._breakPoints.get(path);
 		if (!bps) {
-			bps = new Array<IMockBreakpoint>();
+			bps = new Array<IMonkeycBreakpoint>();
 			this._breakPoints.set(path, bps);
 		}
 		bps.push(bp);
@@ -825,7 +825,7 @@ export class MockRuntime extends EventEmitter {
 	/*
 	 * Clear breakpoint in file with given line.
 	 */
-	public clearBreakPoint(path: string, line: number): IMockBreakpoint | undefined {
+	public clearBreakPoint(path: string, line: number): IMonkeycBreakpoint | undefined {
 		const bps = this._breakPoints.get(path);
 		if (bps) {
 			const index = bps.findIndex(bp => bp.line === line);

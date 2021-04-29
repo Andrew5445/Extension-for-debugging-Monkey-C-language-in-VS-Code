@@ -1,7 +1,7 @@
 {
   "name": "monkeyc-debug",
   "displayName": "Monkey C debugger",
-  "version": "0.42.2",
+  "version": "1.0.0",
   "publisher": "ondrejvrana",
   "description": "Monkey C debugger extension",
   "author": {
@@ -22,10 +22,10 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/Microsoft/vscode-mock-debug.git"
+    "url": "https://github.com/Andrew5445/Extension-for-debugging-Monkey-C-language-in-VS-Code.git"
   },
   "bugs": {
-    "url": "https://github.com/Microsoft/vscode-mock-debug/issues"
+    "url": "https://github.com/Andrew5445/Extension-for-debugging-Monkey-C-language-in-VS-Code/issues"
   },
   "scripts": {
     "vscode:prepublish": "yarn run compile",

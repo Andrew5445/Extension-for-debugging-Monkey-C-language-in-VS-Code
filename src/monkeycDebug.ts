@@ -11,7 +11,7 @@ import {
 } from 'vscode-debugadapter';
 import { DebugProtocol } from 'vscode-debugprotocol';
 import { basename } from 'path';
-import { MockRuntime, IMockBreakpoint, IMockVariable } from './monkeycRuntime';
+import { MonkeycRuntime, IMonkeycBreakpoint, IMonkeycVariable } from './monkeycRuntime';
 import { Subject } from 'await-notify';
 import * as vscode from 'vscode';
 import { glob } from 'glob';
@@ -45,7 +45,7 @@ export class MonkeycDebugSession extends LoggingDebugSession {
 	private static threadID = 1;
 
 	// a Mock runtime (or debugger)
-	private _runtime: MockRuntime;
+	private _runtime: MonkeycRuntime;
 
 	private _variableHandles = new Handles<string>();
 
@@ -74,7 +74,7 @@ export class MonkeycDebugSession extends LoggingDebugSession {
 		this.setDebuggerLinesStartAt1(false);
 		this.setDebuggerColumnsStartAt1(false);
 
-		this._runtime = new MockRuntime();
+		this._runtime = new MonkeycRuntime();
 
 		// setup event handlers
 		this._runtime.on('stopOnEntry', () => {
@@ -95,7 +95,7 @@ export class MonkeycDebugSession extends LoggingDebugSession {
 		this._runtime.on('stopOnPause', () => {
 			this.sendEvent(new StoppedEvent('pause', MonkeycDebugSession.threadID));
 		});
-		this._runtime.on('breakpointValidated', (bp: IMockBreakpoint) => {
+		this._runtime.on('breakpointValidated', (bp: IMonkeycBreakpoint) => {
 			this.sendEvent(new BreakpointEvent('changed', { verified: bp.verified, id: bp.id } as DebugProtocol.Breakpoint));
 		});
 		this._runtime.on('continued', () => {
@@ -367,7 +367,7 @@ export class MonkeycDebugSession extends LoggingDebugSession {
 	protected async variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request) {
 
 		const variables: DebugProtocol.Variable[] = [];
-		let actualVariables: IMockVariable[] = [];
+		let actualVariables: IMonkeycVariable[] = [];
 
 		try {
 			if (this._variableHandles.get(args.variablesReference) === 'local') {
