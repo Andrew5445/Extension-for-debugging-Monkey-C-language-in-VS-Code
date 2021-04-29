@@ -120,7 +120,7 @@ export class MockRuntime extends EventEmitter {
 	/**
 	 * Start executing the given program.
 	 */
-	public async start(program: string, sdkPath: string, workspaceFolder: string, stopOnEntry: boolean, noDebug: boolean, device: string, launchDone, configurationDone) {
+	public async start(program: string, sdkPath: string, workspaceFolder: string, noDebug: boolean, device: string, launchDone, configurationDone) {
 
 		this._device = device;
 
@@ -149,13 +149,8 @@ export class MockRuntime extends EventEmitter {
 
 		this.continue();
 
-		if (stopOnEntry) {
-			// we step once
-			this.step(false, 'stopOnEntry');
-		} else {
-			// we just start to run until we hit a breakpoint or an exception
+		this.step(false, 'stopOnEntry');
 
-		}
 		return null;
 	}
 

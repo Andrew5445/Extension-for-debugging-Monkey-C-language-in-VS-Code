@@ -151,19 +151,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 	));
 
-	context.subscriptions.push(vscode.commands.registerCommand('extension.monkeyc-debug.getProgramName', config => {
-		return vscode.window.showInputBox({
-			placeHolder: "Please enter the name of a markdown file in the workspace folder",
-			value: "readme.md"
-		});
-	}));
-
 	// register a configuration provider for 'mock' debug type
-	const provider = new MockConfigurationProvider();
-	context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('mock', provider));
+	const provider = new MonkeycConfigurationProvider();
+	context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('monkeyc', provider));
 
 	// register a dynamic configuration provider for 'mock' debug type
-	context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('mock', {
+	context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('monkeyc', {
 		provideDebugConfigurations(folder: WorkspaceFolder | undefined): ProviderResult<DebugConfiguration[]> {
 			return [
 				{
@@ -193,12 +186,12 @@ export function activate(context: vscode.ExtensionContext) {
 	switch (runMode) {
 		case 'server':
 			// run the debug adapter as a server inside the extension and communicate via a socket
-			factory = new MockDebugAdapterServerDescriptorFactory();
+			factory = new MonkeycDebugAdapterServerDescriptorFactory();
 			break;
 
 		case 'namedPipeServer':
 			// run the debug adapter as a server inside the extension and communicate via a named pipe (Windows) or UNIX domain socket (non-Windows)
-			factory = new MockDebugAdapterNamedPipeServerDescriptorFactory();
+			factory = new MonkeycDebugAdapterNamedPipeServerDescriptorFactory();
 			break;
 
 		case 'inline':
@@ -212,7 +205,7 @@ export function activate(context: vscode.ExtensionContext) {
 			break;
 	}
 
-	context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('mock', factory));
+	context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('monkeyc', factory));
 	if ('dispose' in factory) {
 		context.subscriptions.push(factory);
 	}
@@ -420,7 +413,6 @@ export function activate(context: vscode.ExtensionContext) {
 										console.log(files);
 									});
 									vscode.commands.executeCommand('extension.monkeyc-debug.sendMessageToWebView', {tests});
-									//console.log(data_);
 									cmd.kill();
 									buffer = '';
 								}
@@ -771,7 +763,7 @@ export function deactivate() {
 	// nothing to do
 }
 
-class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
+class MonkeycConfigurationProvider implements vscode.DebugConfigurationProvider {
 
 	/**
 	 * Massage a debug configuration just before a debug session is being launched,
@@ -783,7 +775,7 @@ class MockConfigurationProvider implements vscode.DebugConfigurationProvider {
 		if (!config.type && !config.request && !config.name) {
 			const editor = vscode.window.activeTextEditor;
 			if (editor && editor.document.languageId === 'monkeyc') {
-				config.type = 'mock';
+				config.type = 'monkeyc';
 				config.name = 'Launch';
 				config.request = 'launch';
 				config.program = '${file}';
@@ -832,7 +824,7 @@ class DebugAdapterExecutableFactory implements vscode.DebugAdapterDescriptorFact
 	}
 }
 
-class MockDebugAdapterServerDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
+class MonkeycDebugAdapterServerDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
 
 	private server?: Net.Server;
 
@@ -858,7 +850,7 @@ class MockDebugAdapterServerDescriptorFactory implements vscode.DebugAdapterDesc
 	}
 }
 
-class MockDebugAdapterNamedPipeServerDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
+class MonkeycDebugAdapterNamedPipeServerDescriptorFactory implements vscode.DebugAdapterDescriptorFactory {
 
 	private server?: Net.Server;
 

@@ -32,8 +32,6 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 	sdkPath: string;
 
 	projectPath: string;
-	/** Automatically stop target after launch. If not specified, target does not stop. */
-	stopOnEntry?: boolean;
 	/** enable logging the Debug Adapter Protocol */
 	trace?: boolean;
 	/** run without debugging */
@@ -229,7 +227,7 @@ export class MonkeycDebugSession extends LoggingDebugSession {
 		//show select device quick pick
 		const device = await vscode.window.showQuickPick(await this.getAvailableDevices(args.projectPath), { placeHolder: "Select Garmin device" });
 		if (device) {
-			this._launchDone = await this._runtime.start(args.program, args.sdkPath, args.projectPath, !args.stopOnEntry, !!args.noDebug, device!, this._launchDone, this._configurationDone);
+			this._launchDone = await this._runtime.start(args.program, args.sdkPath, args.projectPath,!!args.noDebug, device!, this._launchDone, this._configurationDone);
 			logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
 		}
 		else {
